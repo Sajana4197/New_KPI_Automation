@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}First-time setup{% endblock %}
+{% block content %}
+<div class="auth">
+  {% include "_auth_art.html" %}
+  <div class="auth-form">
+    <div class="auth-box">
+      <img src="/static/img/sltmobitel.png" alt="SLT-Mobitel" width="170" height="64">
+      <div>
+        <h2>Welcome. Let's set up {{ app_name }}</h2>
+        <p class="soft">This creates the first administrator account. Its username is <b>admin</b>.
+          You can add more people afterwards under Settings.</p>
+      </div>
+      {% if error %}<div class="banner banner-bad" role="alert">{{ icon("x-circle") }}<div>{{ error }}</div></div>{% endif %}
+      <form method="post" action="/setup" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <label class="field"><span>Username</span>
+          <input class="input" value="admin" disabled>
+        </label>
+        <label class="field"><span>Your name</span>
+          <input class="input" name="full_name" value="{{ full_name or '' }}" maxlength="80" placeholder="Shown in the corner and in the activity log" autofocus>
+        </label>
+        <label class="field"><span>Choose a password</span>
+          <input class="input" type="password" name="password" autocomplete="new-password" minlength="{{ MIN_PASSWORD }}" required>
+          <small>At least {{ MIN_PASSWORD }} characters. Only you will know it; it is stored scrambled.</small>
+        </label>
+        <label class="field"><span>Type the password again</span>
+          <input class="input" type="password" name="confirm" autocomplete="new-password" minlength="{{ MIN_PASSWORD }}" required>
+        </label>
+        <button class="btn btn-block" data-busy="Creating…">{{ icon("check") }}<span>Create administrator account</span></button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

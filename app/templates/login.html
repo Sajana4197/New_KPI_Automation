@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+<div class="auth">
+  {% include "_auth_art.html" %}
+  <div class="auth-form">
+    <div class="auth-box">
+      <img src="/static/img/sltmobitel.png" alt="SLT-Mobitel" width="170" height="64">
+      <div>
+        <h2>Sign in to {{ app_name }}</h2>
+        <p class="soft">Use the account your administrator gave you.</p>
+      </div>
+      {% if error %}<div class="banner banner-bad" role="alert">{{ icon("x-circle") }}<div>{{ error }}</div></div>{% endif %}
+      {{ flash_html }}
+      <form method="post" action="/login" autocomplete="on">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <input type="hidden" name="next" value="{{ next }}">
+        <label class="field"><span>Username</span>
+          <input class="input" name="username" value="{{ username or '' }}" autocomplete="username" autocapitalize="none" spellcheck="false" required {% if not username %}autofocus{% endif %}>
+        </label>
+        <label class="field"><span>Password</span>
+          <input class="input" type="password" name="password" autocomplete="current-password" required {% if username %}autofocus{% endif %}>
+        </label>
+        <button class="btn btn-block" data-busy="Signing in…">{{ icon("lock") }}<span>Sign in</span></button>
+      </form>
+      <p class="auth-foot">Forgotten your password? An administrator can set a new one for you under Settings.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{% if d %}Report {{ d|d }}{% else %}Daily report{% endif %}{% endblock %}
+{% block content %}
+{% if not report %}
+<div class="page-head"><div><h1>Daily report</h1><p>No report has been generated yet.</p></div></div>
+<section class="card">
+  <div class="empty">
+    <div class="empty-ic">{{ icon("file", "lg") }}</div>
+    <h2>There is no report to show yet</h2>
+    <p>Once KPI files have been imported, generate the day's report from the dashboard. It will appear here with
+      every listed site, its pending days and its feedback.</p>
+    <div class="empty-actions"><a class="btn" href="/">{{ icon("grid") }}<span>Go to the dashboard</span></a></div>
+  </div>
+</section>
+{% else %}
+<div class="page-head">
+  <div>
+    <h1>Daily report · {{ d|d }}</h1>
+    <p>{% if report.is_seed %}Starting history loaded from an old Excel report on {{ report.generated_at|dt }}.
+      {% else %}{{ flagged|num }} site{{ '' if flagged == 1 else 's' }} listed out of {{ report.site_count|num }} monitored ·
+      generated {{ report.generated_at|dt }}{% if report.generated_by_label %} by {{ report.generated_by_label }}{% endif %}{% endif %}</p>
+  </div>
+  <div class="page-actions">
+    {% if prev %}<a class="btn btn-ghost" href="/report/{{ prev.report_date.isoformat() }}" title="Earlier report">{{ icon("chev-left") }}<span>{{ prev.report_date|d("short") }}</span></a>{% endif %}
+    {% if next %}<a class="btn btn-ghost" href="/report/{{ next.report_date.isoformat() }}" title="Later report"><span>{{ next.report_date|d("short") }}</span>{{ icon("chev-right") }}</a>{% endif %}
+    {% if not report.is_seed %}
+    {% if can("editor") and has_data %}
+    <form method="post" action="/generate" data-confirm="Regenerate the report for {{ d|d }}? Feedback typed into this report is kept for sites that are still listed.">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <input type="hidden" name="date" value="{{ d.isoformat() }}">
+      <button class="btn btn-ghost" data-busy="Generating…">{{ icon("refresh") }}<span>Regenerate</span></button>
+    </form>
+    {% endif %}
+    <a class="btn" href="/report/{{ d.isoformat() }}/excel">{{ icon("download") }}<span>Download Excel</span></a>
+    {% endif %}
+  </div>
+</div>
+
+{% if missing %}
+<div class="banner banner-warn" role="status">{{ icon("alert") }}
+  <div>Generated without {{ missing|length }} of the 4 files: {{ missing|join(", ") }}.
+    Sites that only appear in {{ 'that file' if missing|length == 1 else 'those files' }} are not included.</div>
+</div>
+{% endif %}
+
+<div class="tabs" role="tablist" aria-label="KPI">
+  {% for k, count, rule in [
+      ("PD", report.pd_count, "Hours with packet drop at or above " ~ (thresholds.pd_pct|g) ~ " %"),
+      ("JITTER", report.jitter_count, "Hours with jitter at or above " ~ (thresholds.jitter_ms|g) ~ " ms"),
+      ("RTT", report.rtt_count, "Hours with round-trip time at or above " ~ (thresholds.rtt_ms|g) ~ " ms")] %}
+  <button class="tab" type="button" role="tab" data-kpi="{{ k }}" data-rule="{{ rule }}" aria-selected="false">
+    <i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}<b>{{ count|num }}</b></button>
+  {% endfor %}
+</div>
+
+<section class="card" id="report-card">
+  <div class="filters">
+    <label class="search">{{ icon("search") }}<span class="sr">Search sites</span>
+      <input class="input input-sm" id="f-q" type="search" placeholder="Search site name" autocomplete="off"></label>
+    <div class="chips" id="f-cat" role="group" aria-label="Category">
+      <button class="chip on" type="button" data-cat="">All</button>
+      {% for c in CATEGORIES %}<button class="chip" type="button" data-cat="{{ c }}" title="{{ CATEGORY_LABELS[c] }}">{{ c }} <small></small></button>{% endfor %}
+    </div>
+    <select class="select select-sm" id="f-source" aria-label="KPI file">
+      <option value="">All KPI files</option>
+      {% for k in SOURCE_ORDER %}<option value="{{ k }}">{{ SOURCES[k].label }}</option>{% endfor %}
+    </select>
+    <select class="select select-sm" id="f-pending" aria-label="Pending days">
+      <option value="">Any pending days</option>
+      <option value="0">First day only</option>
+      <option value="1">1 day or more</option>
+      <option value="7">7 days or more</option>
+      <option value="30">30 days or more</option>
+    </select>
+    <button class="chip" type="button" id="f-new" aria-pressed="false">{{ icon("sparkle", "sm") }} New sites</button>
+    <span class="filters-end" id="f-count"></span>
+  </div>
+  <div class="table-wrap">
+    <table class="table cards" id="report-table">
+      <thead><tr>
+        {% if can("editor") %}<th class="sel"><input type="checkbox" id="sel-all" aria-label="Select every row on this page"></th>{% endif %}
+        <th class="right">No.</th>
+        <th><button class="th-sort" type="button" data-sort="name">Site{{ icon("arrow-down") }}</button></th>
+        <th><button class="th-sort" type="button" data-sort="category">Category{{ icon("arrow-down") }}</button></th>
+        <th><button class="th-sort" type="button" data-sort="hours"><span id="th-hours" title="Hours at or above the threshold">Hours above</span>{{ icon("arrow-down") }}</button></th>
+        <th class="right"><button class="th-sort" type="button" data-sort="peak">Peak{{ icon("arrow-down") }}</button></th>
+        <th><button class="th-sort" type="button" data-sort="pending">Pending{{ icon("arrow-down") }}</button></th>
+        <th><button class="th-sort" type="button" data-sort="feedback">Feedback{{ icon("arrow-down") }}</button></th>
+        <th><button class="th-sort" type="button" data-sort="source">File{{ icon("arrow-down") }}</button></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  {% if can("editor") %}
+  <div class="bulk hide" id="bulk">
+    <b id="bulk-count"></b>
+    <input class="input input-sm" id="bulk-text" list="fb-suggestions" placeholder="Feedback for the selected sites" maxlength="500" autocomplete="off">
+    <button class="btn btn-sm btn-white" type="button" id="bulk-apply">Apply</button>
+    <button class="link-btn" type="button" id="bulk-all"></button>
+    <button class="link-btn" type="button" id="bulk-clear">Clear</button>
+  </div>
+  {% endif %}
+  <div class="pager">
+    <span id="pager-text"></span>
+    <div class="pager-btns">
+      <button class="btn btn-ghost btn-sm" type="button" id="pager-prev">{{ icon("chev-left") }}<span>Previous</span></button>
+      <button class="btn btn-ghost btn-sm" type="button" id="pager-next"><span>Next</span>{{ icon("chev-right") }}</button>
+    </div>
+  </div>
+</section>
+<p class="small muted" id="rule-note"></p>
+
+<datalist id="fb-suggestions">{% for s in suggestions %}<option value="{{ s }}"></option>{% endfor %}</datalist>
+<script type="application/json" id="page-data">{{ page_data|data_json }}</script>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if report %}<script src="/static/js/report.js?v={{ asset_v }}"></script>{% endif %}
+{% endblock %}

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="csrf-token" content="{{ csrf }}">
+  <meta name="theme-color" content="#0056A2">
+  <title>{% block title %}{% endblock %} · {{ app_name }}</title>
+  <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}">
+</head>
+<body class="{% block body_class %}{% endblock %}">
+{% include "_sprite.html" %}
+{% set flash_html %}
+  {% for kind, message in flashes %}
+  <div class="banner banner-{{ kind }}" role="status">
+    {{ icon({"good": "check-circle", "warn": "alert", "bad": "x-circle"}.get(kind, "info")) }}
+    <div>{{ message }}</div>
+    <button class="banner-close" type="button" data-dismiss aria-label="Dismiss">{{ icon("x") }}</button>
+  </div>
+  {% endfor %}
+{% endset %}
+{% if user %}
+{% set nav = [("dashboard", "/", "grid", "Dashboard"), ("report", "/report", "file", "Daily report"),
+              ("sites", "/sites", "tower", "Sites"), ("imports", "/imports", "inbox", "Imports")] %}
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="/">
+      <img src="/static/img/sltmobitel.png" alt="SLT-Mobitel" width="132" height="50">
+      <span class="brand-name">TX KPI <b>Monitor</b></span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      {% for key, href, ic, label in nav %}
+      <a href="{{ href }}" class="nav-link{% if active == key %} is-active{% endif %}"{% if active == key %} aria-current="page"{% endif %}>{{ icon(ic) }}<span>{{ label }}</span></a>
+      {% endfor %}
+      {% if can("admin") %}
+      <div class="nav-label">Administration</div>
+      <a href="/settings" class="nav-link{% if active == 'settings' %} is-active{% endif %}">{{ icon("sliders") }}<span>Settings</span></a>
+      {% endif %}
+    </nav>
+    <div class="side-foot">
+      <a href="/account" class="who{% if active == 'account' %} is-active{% endif %}">
+        <span class="avatar">{{ (user.full_name or user.username)[:1]|upper }}</span>
+        <span class="who-text"><b>{{ user.full_name or user.username }}</b><small>{{ ROLE_LABELS[user.role] }}</small></span>
+      </a>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <button class="icon-btn" title="Sign out" aria-label="Sign out">{{ icon("logout") }}</button>
+      </form>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <a class="topbar-brand" href="/"><img src="/static/img/sltmobitel.png" alt="SLT-Mobitel" width="84" height="32"><span>TX KPI <b>Monitor</b></span></a>
+      <div class="topbar-actions">
+        {% if can("admin") %}<a class="icon-btn{% if active == 'settings' %} is-active{% endif %}" href="/settings" title="Settings" aria-label="Settings">{{ icon("sliders") }}</a>{% endif %}
+        <a class="avatar" href="/account" title="My account" aria-label="My account">{{ (user.full_name or user.username)[:1]|upper }}</a>
+      </div>
+    </header>
+    <main class="content">
+      {{ flash_html }}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <nav class="tabbar" aria-label="Main">
+    {% for key, href, ic, label in nav %}
+    <a href="{{ href }}" class="{% if active == key %}is-active{% endif %}">{{ icon(ic) }}<span>{{ label.replace("Daily ", "")|capitalize }}</span></a>
+    {% endfor %}
+  </nav>
+</div>
+{% else %}
+<main class="bare">{{ self.content() }}</main>
+{% endif %}
+<div id="toasts" aria-live="polite"></div>
+<script src="/static/js/app.js?v={{ asset_v }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

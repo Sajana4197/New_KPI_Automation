@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p>Report rules, user accounts, starting history and the activity log. Only administrators see this page.</p>
+  </div>
+</div>
+
+<section class="card" id="rules">
+  <div class="card-head"><div><h2>Report rules</h2>
+    <p>A site is listed when its worst path is at or above a threshold for enough hours of the day</p></div></div>
+  <div class="card-body">
+    <form method="post" action="/settings/rules">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <div class="form-grid">
+        <label class="field"><span><i class="dot PD"></i> Packet drop threshold</span>
+          <span class="with-unit"><input class="input" type="number" name="pd_pct" value="{{ thresholds.pd_pct|g }}" min="0.01" max="100" step="any" required><em>%</em></span></label>
+        <label class="field"><span><i class="dot JITTER"></i> Jitter threshold</span>
+          <span class="with-unit"><input class="input" type="number" name="jitter_ms" value="{{ thresholds.jitter_ms|g }}" min="0.01" step="any" required><em>ms</em></span></label>
+        <label class="field"><span><i class="dot RTT"></i> RTT threshold</span>
+          <span class="with-unit"><input class="input" type="number" name="rtt_ms" value="{{ thresholds.rtt_ms|g }}" min="0.01" step="any" required><em>ms</em></span></label>
+        <label class="field"><span>Hours needed to be listed</span>
+          <span class="with-unit"><input class="input" type="number" name="min_hours" value="{{ thresholds.min_hours|int }}" min="1" max="24" step="1" required><em>hours</em></span></label>
+      </div>
+      <label class="field" style="margin-top:16px"><span>Feedback given to a site on its first day</span>
+        <input class="input" name="default_feedback" value="{{ default_feedback }}" maxlength="200" required>
+        <small>A site that was already listed the day before keeps the feedback it had.</small></label>
+      <div class="form-foot">
+        <button class="btn" data-busy="Saving…">{{ icon("check") }}<span>Save rules</span></button>
+        <span class="small muted">New thresholds apply to reports generated from now on. Regenerate a day to apply them to it.</span>
+      </div>
+    </form>
+  </div>
+</section>
+
+<section class="card" id="users">
+  <div class="card-head"><div><h2>Users</h2><p>{{ users|length }} account{{ '' if users|length == 1 else 's' }}</p></div></div>
+  <div class="card-body">
+    <div class="list">
+      {% for u in users %}
+      <div class="list-row" style="align-items:flex-start;flex-wrap:wrap">
+        <span class="avatar" aria-hidden="true">{{ (u.full_name or u.username)[:1]|upper }}</span>
+        <div class="list-main">
+          <b>{{ u.full_name or u.username }}</b>{% if u.id == user.id %} <span class="tag">you</span>{% endif %}
+          <small>{{ u.username }} · added {{ u.created_at|dt }} · {% if u.last_login_at %}last signed in {{ u.last_login_at|dt }}{% else %}has not signed in yet{% endif %}</small>
+        </div>
+        <span class="pill {{ 'pill-info' if u.role == 'admin' else '' }}" title="{{ ROLE_HELP[u.role] }}">{{ ROLE_LABELS[u.role] }}</span>
+        {% if not u.is_active %}<span class="pill pill-warn">{{ icon("lock") }} Disabled</span>{% endif %}
+        <details class="row-edit" style="flex-basis:100%">
+          <summary><span class="btn btn-ghost btn-sm">{{ icon("edit", "sm") }}<span>Edit</span></span></summary>
+          <form class="edit-panel" method="post" action="/settings/users/{{ u.id }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <div class="form-grid">
+              <label class="field"><span>Full name</span>
+                <input class="input" name="full_name" value="{{ u.full_name or '' }}" maxlength="80" autocomplete="off"></label>
+              <label class="field"><span>Role</span>
+                <select class="select" name="role">
+                  {% for r in ROLES %}<option value="{{ r }}"{% if r == u.role %} selected{% endif %}>{{ ROLE_LABELS[r] }}</option>{% endfor %}
+                </select></label>
+              <label class="field"><span>New password</span>
+                <input class="input" type="password" name="password" minlength="{{ MIN_PASSWORD }}" maxlength="200" autocomplete="new-password" placeholder="Leave empty to keep the current one"></label>
+            </div>
+            <div class="form-foot">
+              <label class="check"><input type="checkbox" name="is_active" value="1"{% if u.is_active %} checked{% endif %}> Can sign in</label>
+              <button class="btn btn-sm" data-busy="Saving…">{{ icon("check", "sm") }}<span>Save</span></button>
+            </div>
+          </form>
+        </details>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="card-body" style="border-top:1px solid var(--line-2)">
+    <h3 style="margin:0 0 12px">Add a user</h3>
+    <form method="post" action="/settings/users/add">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <div class="form-grid">
+        <label class="field"><span>Username</span>
+          <input class="input" name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{2,31}" autocomplete="off" autocapitalize="none" spellcheck="false">
+          <small>3 to 32 letters, numbers, dot, dash or underscore</small></label>
+        <label class="field"><span>Full name</span>
+          <input class="input" name="full_name" maxlength="80" autocomplete="off"></label>
+        <label class="field"><span>Role</span>
+          <select class="select" name="role">
+            {% for r in ROLES|reverse %}<option value="{{ r }}">{{ ROLE_LABELS[r] }}</option>{% endfor %}
+          </select></label>
+        <label class="field"><span>Password</span>
+          <input class="input" type="password" name="password" required minlength="{{ MIN_PASSWORD }}" maxlength="200" autocomplete="new-password">
+          <small>At least {{ MIN_PASSWORD }} characters. They can change it under My account.</small></label>
+      </div>
+      <div class="form-foot">
+        <button class="btn" data-busy="Adding…">{{ icon("plus") }}<span>Add user</span></button>
+      </div>
+    </form>
+    <dl class="kv small" style="margin-top:18px">
+      {% for r in ROLES %}<dt>{{ ROLE_LABELS[r] }}</dt><dd style="font-weight:500">{{ ROLE_HELP[r] }}</dd>{% endfor %}
+    </dl>
+  </div>
+</section>
+
+<section class="card" id="history">
+  <div class="card-head"><div><h2>Starting history</h2>
+    <p>Load an old IPPM report so pending days and feedback continue from it</p></div></div>
+  <div class="card-body">
+    <p class="soft" style="margin:0 0 16px">Upload the Excel report from the last day of the old process (with its Packet Drop, Jitter and RTT
+      sheets). The first report generated after that day carries on its pending days and feedback.
+      {% if first_report %}The first report generated here is for {{ first_report|d }}, so the old report should be dated the day before it, then regenerate that day.{% endif %}</p>
+    <form method="post" action="/settings/seed" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <div class="form-row">
+        <label class="field"><span>Date of the old report</span>
+          <input class="input" type="date" name="date" required></label>
+        <label class="field" style="flex:2 1 260px"><span>Old report file</span>
+          <input class="input" type="file" name="file" accept=".xlsx,.xlsm" required></label>
+        <button class="btn" data-busy="Loading…">{{ icon("upload") }}<span>Load history</span></button>
+      </div>
+    </form>
+    {% if seeds %}
+    <div class="list" style="margin-top:18px">
+      {% for s in seeds %}
+      <div class="list-row">
+        <div class="list-main">
+          <b>{{ s.report_date|d("long") }}</b>
+          <small>{{ s["items"]|num }} rows · {{ s.matched|num }} matched to known sites · Packet drop {{ s.pd_count|num }}, jitter {{ s.jitter_count|num }}, RTT {{ s.rtt_count|num }} · loaded {{ s.generated_at|dt }}</small>
+        </div>
+        <form method="post" action="/settings/seed/delete" data-confirm="Remove the starting history for {{ s.report_date|d }}? Reports already generated keep their pending days until they are regenerated.">
+          <input type="hidden" name="csrf_token" value="{{ csrf }}">
+          <input type="hidden" name="date" value="{{ s.report_date.isoformat() }}">
+          <button class="btn btn-ghost btn-sm">{{ icon("trash", "sm") }}<span>Remove</span></button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="small muted" style="margin:14px 0 0">No starting history is loaded. Without it, every site starts at 0 pending days on the first report.</p>
+    {% endif %}
+  </div>
+</section>
+
+<div class="grid grid-2">
+  <section class="card">
+    <div class="card-head"><div><h2>Storage</h2><p>Data stays stored until an administrator deletes it</p></div>
+      <a class="btn btn-ghost btn-sm" href="/imports">{{ icon("inbox", "sm") }}<span>Manage days</span></a></div>
+    <div class="card-body">
+      <dl class="kv">
+        <dt>Database size</dt><dd>{{ storage.size }}</dd>
+        <dt>Days stored</dt><dd>{{ storage.days|num }}</dd>
+        <dt>Sites known</dt><dd>{{ storage.sites|num }}</dd>
+      </dl>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-head"><div><h2>Folders</h2><p>On the computer that runs {{ app_name }}</p></div></div>
+    <div class="card-body">
+      <dl class="kv">
+        {% for label, path in folders.items() %}<dt>{{ label }}</dt><dd><span class="path">{{ path }}</span></dd>{% endfor %}
+      </dl>
+    </div>
+  </section>
+</div>
+
+<section class="card" id="activity">
+  <div class="card-head"><div><h2>Activity log</h2><p>The last {{ activity|length }} actions, newest first</p></div></div>
+  <div class="table-wrap" style="margin-top:10px">
+    <table class="table">
+      <thead><tr><th>When</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
+      <tbody>
+        {% for a in activity %}
+        <tr>
+          <td class="nowrap muted">{{ a.at|dt }}</td>
+          <td class="nowrap">{{ a.username or "system" }}</td>
+          <td class="nowrap"><b>{{ a.action }}</b></td>
+          <td class="wrap">{{ a.detail or "" }}</td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="4">Nothing has been recorded yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Imports{% endblock %}
+{% block content %}
+<div class="page-head" data-watch="reload" data-seq="{{ seq }}">
+  <div>
+    <h1>Imports</h1>
+    <p>KPI files are read from the inbox folder as soon as they arrive.</p>
+  </div>
+  <div class="page-actions">
+    <span class="live{% if watch.busy or watch.waiting %} busy{% elif not watch.running %} off{% endif %}" id="watch-state">
+      {%- if watch.busy %}Importing a file…{% elif watch.waiting %}{{ watch.waiting|length }} file{{ '' if watch.waiting|length == 1 else 's' }} arriving…{% elif watch.running %}Watching the inbox folder{% else %}The folder watcher is not running{% endif -%}
+    </span>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <section class="card">
+    <div class="card-head"><div><h2>Upload files</h2><p>From this device, instead of copying them into the folder</p></div></div>
+    <div class="card-body">
+      {% if can("editor") %}
+      <form method="post" action="/imports/upload" enctype="multipart/form-data" id="upload-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <input class="sr" type="file" id="upload-input" name="files" multiple accept=".xlsx,.xlsm,.xls" tabindex="-1">
+        <label class="drop" id="drop" for="upload-input">
+          {{ icon("upload", "lg") }}
+          <b>Drop the KPI Excel files here, or tap to choose</b>
+          <small>Up to four files a day. The kind of file is recognised from its contents, not its name.</small>
+        </label>
+        <ul class="drop-files" id="drop-files"></ul>
+        <div class="form-foot hide" id="upload-foot">
+          <button class="btn" data-busy="Uploading…">{{ icon("upload") }}<span>Upload and import</span></button>
+          <button class="link-btn" type="button" id="upload-clear">Clear</button>
+        </div>
+      </form>
+      {% else %}
+      <p class="soft">Your account can view imports. An editor or administrator can upload files.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div><h2>Watched folder</h2><p>Copy the day's files here and they are imported automatically</p></div>
+      {% if can("editor") %}
+      <form method="post" action="/imports/scan">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <button class="btn btn-ghost btn-sm">{{ icon("refresh", "sm") }}<span>Check now</span></button>
+      </form>
+      {% endif %}
+    </div>
+    <div class="card-body">
+      <dl class="kv">
+        <dt>{{ icon("inbox", "sm") }} Inbox</dt><dd><span class="path">{{ inbox }}</span></dd>
+        <dt>{{ icon("folder", "sm") }} Archive</dt><dd><span class="path">{{ archive }}</span></dd>
+        <dt>{{ icon("alert", "sm") }} Failed</dt><dd><span class="path">{{ failed }}</span></dd>
+        <dt>{{ icon("database", "sm") }} Stored</dt><dd>{{ storage.days|num }} day{{ '' if storage.days == 1 else 's' }} · {{ storage.sites|num }} sites · {{ storage.size }}</dd>
+      </dl>
+      <p class="small muted" style="margin-top:12px">After a file is imported it is moved to the archive folder, in a folder named after its
+        report day. A file that cannot be read is moved to the failed folder and listed below with the reason.</p>
+    </div>
+  </section>
+</div>
+
+<section class="card">
+  <div class="card-head"><div><h2>Days stored</h2><p>Each day keeps its data until an administrator deletes it</p></div></div>
+  <div class="table-wrap" style="margin-top:10px">
+    <table class="table cards">
+      <thead><tr><th>Report day</th><th>Files</th><th class="right">Rows stored</th><th>Report</th><th></th></tr></thead>
+      <tbody>
+        {% for day in days %}
+        <tr>
+          <td class="nowrap full" data-label="Report day"><a class="site-link" href="/?date={{ day.date.isoformat() }}">{{ day.date|d("long") }}</a></td>
+          <td class="full" data-label="Files">
+            <div class="day-files">
+              {% for k in SOURCE_ORDER %}
+              {% set f = day.files.get(k) %}
+              {% if f %}<span class="pill pill-good" title="{{ f.filename }} · {{ f.row_count|num }} rows · imported {{ f.imported_at|dt }}">{{ icon("check") }} {{ SOURCES[k].short }}</span>
+              {% else %}<span class="pill pill-warn" title="{{ SOURCES[k].label }} has not been received">{{ icon("clock") }} {{ SOURCES[k].short }} missing</span>{% endif %}
+              {% endfor %}
+            </div>
+          </td>
+          <td class="right num" data-label="Rows stored">{{ day.rows|num }}</td>
+          <td data-label="Report">
+            {% if day.report and not day.report.is_seed %}<a href="/report/{{ day.date.isoformat() }}">Generated {{ day.report.generated_at|dt }}</a>
+            {% else %}<a href="/?date={{ day.date.isoformat() }}">Not generated yet</a>{% endif %}
+          </td>
+          <td class="right full">
+            {% if can("admin") %}<button class="btn btn-ghost btn-sm" type="button" data-delete="{{ day.date.isoformat() }}" data-delete-label="{{ day.date|d('long') }}" data-delete-rows="{{ day.rows|num }}">{{ icon("trash", "sm") }}<span>Delete</span></button>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="5">Nothing has been imported yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><h2>Import log</h2><p>The most recent files, newest first</p></div></div>
+  <div class="table-wrap" style="margin-top:10px">
+    <table class="table cards">
+      <thead><tr><th>Imported</th><th>File</th><th>Kind</th><th>Report day</th><th class="right">Rows</th><th class="right">Sites</th><th class="right">New sites</th><th>Result</th></tr></thead>
+      <tbody>
+        {% for f in history %}
+        <tr>
+          <td class="nowrap muted full" data-label="Imported">{{ f.imported_at|dt }}</td>
+          <td class="wrap full" data-label="File">{{ f.filename }}{% if f.message %}<div class="small muted">{{ f.message }}</div>{% endif %}</td>
+          <td class="nowrap" data-label="Kind">{% if f.source %}<span class="tag" title="{{ SOURCES[f.source].label }}">{{ SOURCES[f.source].short }}</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+          <td class="nowrap" data-label="Report day">{{ f.report_date|d or "–" }}</td>
+          <td class="right num" data-label="Rows">{{ f.row_count|num }}</td>
+          <td class="right num" data-label="Sites">{{ f.site_count|num }}</td>
+          <td class="right num" data-label="New sites">{% if f.is_initial %}<span class="muted" title="The first file of this kind: every site in it was new">first load</span>{% else %}{{ f.new_site_count|num }}{% endif %}</td>
+          <td class="nowrap full" data-label="Result">
+            {% if f.status == "ok" %}<span class="pill pill-good">{{ icon("check") }} Imported</span>
+            {% elif f.status == "replaced" %}<span class="pill">{{ icon("refresh") }} Replaced by a newer file</span>
+            {% elif f.status == "duplicate" %}<span class="pill pill-info">{{ icon("info") }} Already imported</span>
+            {% else %}<span class="pill pill-crit">{{ icon("x-circle") }} Failed</span>{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="8">No files yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if can("admin") %}
+<dialog class="modal" id="delete-dialog">
+  <form method="post" action="/imports/delete">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <input type="hidden" name="date" id="delete-date">
+    <div class="modal-body">
+      <h2>Delete a day's data?</h2>
+      <p>This removes everything stored for <b id="delete-label"></b>: <span id="delete-rows"></span> hourly rows, the
+        day's report and its feedback. Sites seen only on that day are removed too. The original Excel files stay in
+        the archive folder. This cannot be undone.</p>
+      <label class="field"><span>Type <code id="delete-echo"></code> to confirm</span>
+        <input class="input" name="confirm" id="delete-confirm" autocomplete="off" inputmode="numeric"></label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn-danger" id="delete-go" disabled>{{ icon("trash") }}<span>Delete this day</span></button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="/static/js/imports.js?v={{ asset_v }}"></script>{% endblock %}

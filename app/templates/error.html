@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="error-page">
+  <div class="card" style="max-width:520px;width:100%">
+    <div class="empty">
+      <div class="empty-ic">{{ icon("alert", "lg") }}</div>
+      <h1>{{ title }}</h1>
+      <p>{{ message }}</p>
+      <div class="empty-actions">
+        <a class="btn" href="/">{{ icon("grid") }}<span>{% if user %}Back to the dashboard{% else %}Go to sign in{% endif %}</span></a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

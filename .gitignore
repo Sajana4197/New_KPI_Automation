@@ -1,0 +1,33 @@
+# Secrets and local settings (.env.example is the template that is kept)
+.env
+.env.*
+!.env.example
+instance/
+
+# KPI data and generated reports (the app creates these folders when it starts)
+inbox/
+archive/
+failed/
+reports/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs and temporary files
+*.log
+*.tmp
+~$*.xlsx
+
+# Editors, tools and the operating system
+.claude/settings.local.json
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

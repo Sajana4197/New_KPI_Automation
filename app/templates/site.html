@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}{{ site.name }}{% endblock %}
+{% set limits = {"PD": thresholds.pd_pct, "JITTER": thresholds.jitter_ms, "RTT": thresholds.rtt_ms} %}
+{% set min_hours = thresholds.min_hours|int %}
+
+{% block content %}
+<div class="page-head">
+  <div style="min-width:0">
+    <a class="crumb" href="/sites">{{ icon("chev-left", "sm") }} Sites</a>
+    <h1 style="overflow-wrap:anywhere">{{ site.name }}</h1>
+    <p>
+      <span class="tag" title="Category">{{ site.category }} · {{ CATEGORY_LABELS.get(site.category, "") }}</span>
+      <span class="tag" title="KPI file">{{ SOURCES[site.source].label }}</span>
+      {% if SOURCES[site.source].vendor == "ZTE" %}<span class="tag" title="Managed element ID">ID {{ site.ext_key }}</span>{% endif %}
+      <span style="display:inline-block">First seen {{ site.first_seen|d }} · last seen {{ site.last_seen|d }}</span>
+    </p>
+  </div>
+  {% if site.dates %}
+  <form class="page-actions" method="get" action="/sites/{{ site.id }}">
+    <label class="sr" for="day">Day</label>
+    <select class="select" id="day" name="date" data-autosubmit>
+      {% for x in site.dates %}<option value="{{ x.isoformat() }}"{% if x == d %} selected{% endif %}>{{ x|d("long") }}</option>{% endfor %}
+    </select>
+  </form>
+  {% endif %}
+</div>
+
+{% if not d %}
+<section class="card"><div class="empty">
+  <div class="empty-ic">{{ icon("tower", "lg") }}</div>
+  <h2>No measurements are stored for this site</h2>
+  <p>The days that held its data have been deleted.</p>
+</div></section>
+{% else %}
+
+<div class="tiles" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
+  {% for k, hours, peak in [("PD", day.daily.pd_hours, day.daily.pd_max), ("JITTER", day.daily.jitter_hours, day.daily.jitter_max), ("RTT", day.daily.rtt_hours, day.daily.rtt_max)] %}
+  <div class="tile">
+    <span class="tile-label"><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</span>
+    <span class="tile-value">{{ hours }} <span class="small soft" style="letter-spacing:0;font-weight:600">hour{{ '' if hours == 1 else 's' }} at or above {{ limits[k]|g }} {{ KPI_UNITS[k] }}</span></span>
+    <span class="tile-meta">
+      {% if hours >= min_hours %}<span class="pill pill-crit">{{ icon("alert") }} Listed</span>
+      {% else %}<span class="pill pill-good">{{ icon("check") }} Not listed</span>{% endif %}
+      <span>peak {{ peak|kpi_value(k) }}</span>
+    </span>
+  </div>
+  {% endfor %}
+  <div class="tile">
+    <span class="tile-label">Measured</span>
+    <span class="tile-value">{{ day.daily.samples }} <span class="small soft" style="letter-spacing:0;font-weight:600">hours</span></span>
+    <span class="tile-meta"><span>{{ day.daily.path_count }} path{{ '' if day.daily.path_count == 1 else 's' }} · a site is listed at {{ min_hours }} hours or more</span></span>
+  </div>
+</div>
+
+{% if listed_today %}
+<section class="card">
+  <div class="card-head"><div><h2>On the report for {{ d|d }}</h2></div>
+    <a class="btn btn-ghost btn-sm" href="/report/{{ d.isoformat() }}">{{ icon("file", "sm") }}<span>Open report</span></a></div>
+  <div class="card-body"><div class="list">
+    {% for r in listed_today %}
+    <div class="list-row">
+      <div class="list-main"><b class="kpi-name"><i class="dot {{ r.kpi }}"></i>{{ KPI_LABELS[r.kpi] }}</b>
+        <small>{{ r.sample_count }} hours above threshold · feedback: {{ r.feedback }}</small></div>
+      {% if r.pending_days %}<span class="pill {{ 'pill-crit' if r.pending_days >= 30 else 'pill-serious' if r.pending_days >= 7 else 'pill-warn' }}">{{ icon("clock") }} {{ r.pending_days }} day{{ '' if r.pending_days == 1 else 's' }} pending</span>
+      {% else %}<span class="pill">First day</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div></div>
+</section>
+{% endif %}
+
+<section class="card">
+  <div class="card-head"><div><h2>Hour by hour</h2>
+    <p>The worst path of the site in each hour. The dashed line is the threshold. Each chart has its own scale.</p></div></div>
+  <div class="card-body">
+    <div class="multiples">
+      {% for k in KPIS %}
+      <div class="multiple">
+        <div class="multiple-head"><h3><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</h3><span class="multiple-note">{{ KPI_UNITS[k] }}</span></div>
+        <div class="chart" id="chart-{{ k }}" role="img" aria-label="{{ KPI_LABELS[k] }} in each hour of the day"></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><h2>Paths on this day</h2><p>Each IP path or measuring point of the site</p></div></div>
+  <div class="table-wrap" style="margin-top:10px">
+    <table class="table cards">
+      <thead><tr><th>Path</th><th class="right">Hours measured</th><th class="right">Packet drop peak</th><th class="right">Packet drop average</th>
+        <th class="right">Jitter peak</th><th class="right">RTT peak</th><th class="right">Hours above (PD / jitter / RTT)</th></tr></thead>
+      <tbody>
+        {% for p in day.paths %}
+        <tr>
+          <td class="wrap mono full" data-label="Path">{{ p.label }}</td>
+          <td class="right num" data-label="Hours measured">{{ p.samples }}</td>
+          <td class="right num nowrap{% if p.pd_max is not none and p.pd_max >= limits.PD %} over{% endif %}" data-label="Packet drop peak">{{ p.pd_max|kpi_value("PD") }}</td>
+          <td class="right num nowrap" data-label="Packet drop average">{{ p.pd_avg|kpi_value("PD") }}</td>
+          <td class="right num nowrap{% if p.jitter_max is not none and p.jitter_max >= limits.JITTER %} over{% endif %}" data-label="Jitter peak">{{ p.jitter_max|kpi_value("JITTER") }}</td>
+          <td class="right num nowrap{% if p.rtt_max is not none and p.rtt_max >= limits.RTT %} over{% endif %}" data-label="RTT peak">{{ p.rtt_max|kpi_value("RTT") }}</td>
+          <td class="right num nowrap full" data-label="Hours above (PD / jitter / RTT)">{{ p.pd_hours }} / {{ p.jitter_hours }} / {{ p.rtt_hours }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if site.history|length > 1 %}
+<section class="card">
+  <div class="card-head">
+    <div><h2>Day by day</h2><p>Hours at or above the threshold on each stored day</p></div>
+    <div class="legend">{% for k in KPIS %}<span><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</span>{% endfor %}</div>
+  </div>
+  <div class="card-body"><div class="chart chart-tall" id="chart-history" role="img" aria-label="Hours above the threshold on each day"></div></div>
+  <div class="table-wrap">
+    <table class="table cards">
+      <thead><tr><th>Day</th><th class="right">Hours measured</th><th class="right">Packet drop hours</th><th class="right">Jitter hours</th><th class="right">RTT hours</th>
+        <th class="right">Packet drop peak</th><th class="right">Jitter peak</th><th class="right">RTT peak</th></tr></thead>
+      <tbody>
+        {% for h in site.history %}
+        <tr{% if h.report_date == d %} class="is-current"{% endif %}>
+          <td class="nowrap full"><a class="site-link" href="/sites/{{ site.id }}?date={{ h.report_date.isoformat() }}">{{ h.report_date|d }}</a></td>
+          <td class="right num" data-label="Hours measured">{{ h.samples }}</td>
+          <td class="right num" data-label="Packet drop hours">{{ h.pd_hours }}</td><td class="right num" data-label="Jitter hours">{{ h.jitter_hours }}</td><td class="right num" data-label="RTT hours">{{ h.rtt_hours }}</td>
+          <td class="right num nowrap" data-label="Packet drop peak">{{ h.pd_max|kpi_value("PD") }}</td><td class="right num nowrap" data-label="Jitter peak">{{ h.jitter_max|kpi_value("JITTER") }}</td><td class="right num nowrap" data-label="RTT peak">{{ h.rtt_max|kpi_value("RTT") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endif %}
+
+<div class="grid grid-2">
+  <section class="card">
+    <div class="card-head"><div><h2>Report history</h2><p>Each time this site was listed</p></div></div>
+    {% if site.listed %}
+    <div class="table-wrap" style="margin-top:10px">
+      <table class="table cards">
+        <thead><tr><th>Report</th><th>KPI</th><th class="right">Hours</th><th class="right">Pending days</th><th>Feedback</th></tr></thead>
+        <tbody>
+          {% for r in site.listed %}
+          <tr>
+            <td class="nowrap" data-label="Report"><a href="/report/{{ r.report_date.isoformat() }}#{{ r.kpi }}">{{ r.report_date|d }}</a></td>
+            <td class="nowrap" data-label="KPI"><span class="kpi-name"><i class="dot {{ r.kpi }}"></i>{{ KPI_LABELS[r.kpi] }}</span></td>
+            <td class="right num" data-label="Hours">{{ r.sample_count }}</td>
+            <td class="right num" data-label="Pending days">{{ r.pending_days }}</td>
+            <td class="wrap full" data-label="Feedback">{{ r.feedback }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="card-body"><p class="soft">This site has never been listed on a report.</p></div>
+    {% endif %}
+  </section>
+  <section class="card">
+    <div class="card-head"><div><h2>Names</h2><p>Every name this site has carried in the KPI files</p></div></div>
+    <div class="card-body"><div class="list">
+      {% for n in site.names %}
+      <div class="list-row">
+        <div class="list-main"><b>{{ n.name }}</b><small>{{ n.first_seen|d }} to {{ n.last_seen|d }}</small></div>
+        {% if loop.first %}<span class="pill pill-info">Current</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div></div>
+  </section>
+</div>
+
+<script type="application/json" id="page-data">{{ page_data|data_json }}</script>
+{% endblock %}
+
+{% block scripts %}
+{% if d %}
+<script src="/static/vendor/echarts.min.js?v=5.5.1"></script>
+<script src="/static/js/charts.js?v={{ asset_v }}"></script>
+<script src="/static/js/site.js?v={{ asset_v }}"></script>
+{% endif %}
+{% endblock %}
