@@ -12,14 +12,13 @@ from fastapi import Request
 
 from . import db
 
-ROLES = ["admin", "editor", "viewer"]
-ROLE_LABELS = {"admin": "Administrator", "editor": "Editor", "viewer": "Viewer"}
+ROLES = ["admin", "user"]
+ROLE_LABELS = {"admin": "Administrator", "user": "User"}
 ROLE_HELP = {
-    "admin": "Everything, including users, thresholds and deleting data.",
-    "editor": "Import files, generate reports and edit feedback.",
-    "viewer": "View pages and download reports only.",
+    "admin": "Everything: import files, generate reports, edit feedback, users, thresholds and deleting data.",
+    "user": "View the dashboard, reports and sites, and download reports. Cannot change anything.",
 }
-_RANK = {"viewer": 1, "editor": 2, "admin": 3}
+_RANK = {"user": 1, "admin": 3}
 MIN_PASSWORD_LENGTH = 8
 
 # scrypt work factors (about 16 MB of memory and a few hundredths of a second per check).
@@ -111,7 +110,7 @@ def can(user: dict | None, role: str) -> bool:
     return bool(user) and _RANK[user["role"]] >= _RANK[role]
 
 
-def require(role: str = "viewer"):
+def require(role: str = "user"):
     """FastAPI dependency: a signed-in user holding at least this role."""
     def dependency(request: Request) -> dict:
         user = current_user(request)

@@ -24,13 +24,14 @@
     {% if prev %}<a class="btn btn-ghost" href="/report/{{ prev.report_date.isoformat() }}" title="Earlier report">{{ icon("chev-left") }}<span>{{ prev.report_date|d("short") }}</span></a>{% endif %}
     {% if next %}<a class="btn btn-ghost" href="/report/{{ next.report_date.isoformat() }}" title="Later report"><span>{{ next.report_date|d("short") }}</span>{{ icon("chev-right") }}</a>{% endif %}
     {% if not report.is_seed %}
-    {% if can("editor") and has_data %}
+    {% if can("admin") and has_data %}
     <form method="post" action="/generate" data-confirm="Regenerate the report for {{ d|d }}? Feedback typed into this report is kept for sites that are still listed.">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <input type="hidden" name="date" value="{{ d.isoformat() }}">
       <button class="btn btn-ghost" data-busy="Generating…">{{ icon("refresh") }}<span>Regenerate</span></button>
     </form>
     {% endif %}
+    <a class="btn btn-ghost" href="/report/{{ d.isoformat() }}/preview">{{ icon("eye") }}<span>Preview Excel</span></a>
     <a class="btn" href="/report/{{ d.isoformat() }}/excel">{{ icon("download") }}<span>Download Excel</span></a>
     {% endif %}
   </div>
@@ -78,7 +79,7 @@
   <div class="table-wrap">
     <table class="table cards" id="report-table">
       <thead><tr>
-        {% if can("editor") %}<th class="sel"><input type="checkbox" id="sel-all" aria-label="Select every row on this page"></th>{% endif %}
+        {% if can("admin") %}<th class="sel"><input type="checkbox" id="sel-all" aria-label="Select every row on this page"></th>{% endif %}
         <th class="right">No.</th>
         <th><button class="th-sort" type="button" data-sort="name">Site{{ icon("arrow-down") }}</button></th>
         <th><button class="th-sort" type="button" data-sort="category">Category{{ icon("arrow-down") }}</button></th>
@@ -91,7 +92,7 @@
       <tbody></tbody>
     </table>
   </div>
-  {% if can("editor") %}
+  {% if can("admin") %}
   <div class="bulk hide" id="bulk">
     <b id="bulk-count"></b>
     <input class="input input-sm" id="bulk-text" list="fb-suggestions" placeholder="Feedback for the selected sites" maxlength="500" autocomplete="off">

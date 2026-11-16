@@ -111,6 +111,21 @@
     if (closer) { var dlg = closer.closest("dialog"); if (dlg) dlg.close(); }
   });
 
+  /* Collapse or expand the side menu. The choice is kept in a cookie so the server draws it right away. */
+  var shell = document.getElementById("shell");
+  var sideToggle = document.getElementById("side-toggle");
+  if (shell && sideToggle) {
+    sideToggle.addEventListener("click", function () {
+      var closed = shell.classList.toggle("is-collapsed");
+      var label = closed ? "Expand the menu" : "Collapse the menu";
+      sideToggle.setAttribute("aria-expanded", closed ? "false" : "true");
+      sideToggle.setAttribute("aria-label", label);
+      sideToggle.title = label;
+      document.cookie = "tx_side=" + (closed ? "c" : "o") + "; path=/; max-age=31536000; SameSite=Lax";
+      setTimeout(function () { window.dispatchEvent(new Event("resize")); }, 240);   /* charts refit */
+    });
+  }
+
   document.addEventListener("change", function (ev) {
     if (ev.target.matches("[data-autosubmit]") && ev.target.form) ev.target.form.submit();
   });

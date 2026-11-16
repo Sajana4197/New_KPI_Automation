@@ -22,24 +22,34 @@
 {% endset %}
 {% if user %}
 {% set nav = [("dashboard", "/", "grid", "Dashboard"), ("report", "/report", "file", "Daily report"),
-              ("sites", "/sites", "tower", "Sites"), ("imports", "/imports", "inbox", "Imports")] %}
-<div class="shell">
+              ("sites", "/sites", "tower", "Sites")] %}
+{% if can("admin") %}{% set nav = nav + [("imports", "/imports", "inbox", "Imports")] %}{% endif %}
+{% set side_closed = request.cookies.get("tx_side") == "c" %}
+<div class="shell{% if side_closed %} is-collapsed{% endif %}" id="shell">
   <aside class="side">
-    <a class="brand" href="/">
-      <img src="/static/img/sltmobitel.png" alt="SLT-Mobitel" width="132" height="50">
-      <span class="brand-name">TX KPI <b>Monitor</b></span>
-    </a>
+    <div class="side-top">
+      <a class="brand" href="/" title="{{ app_name }}">
+        <img class="brand-logo" src="/static/img/sltmobitel.png" alt="SLT-Mobitel" width="132" height="50">
+        <img class="brand-mark" src="/static/img/favicon.svg" alt="SLT-Mobitel" width="40" height="40">
+        <span class="brand-name">TX KPI <b>Monitor</b></span>
+      </a>
+      <button class="icon-btn side-toggle" type="button" id="side-toggle" aria-controls="shell"
+              aria-expanded="{{ 'false' if side_closed else 'true' }}"
+              title="{{ 'Expand the menu' if side_closed else 'Collapse the menu' }}"
+              aria-label="{{ 'Expand the menu' if side_closed else 'Collapse the menu' }}">{{ icon("chevs") }}</button>
+    </div>
     <nav class="nav" aria-label="Main">
+      <div class="nav-label">Menu</div>
       {% for key, href, ic, label in nav %}
-      <a href="{{ href }}" class="nav-link{% if active == key %} is-active{% endif %}"{% if active == key %} aria-current="page"{% endif %}>{{ icon(ic) }}<span>{{ label }}</span></a>
+      <a href="{{ href }}" data-tip="{{ label }}" class="nav-link{% if active == key %} is-active{% endif %}"{% if active == key %} aria-current="page"{% endif %}><span class="nav-ic">{{ icon(ic) }}</span><span class="nav-text">{{ label }}</span></a>
       {% endfor %}
       {% if can("admin") %}
       <div class="nav-label">Administration</div>
-      <a href="/settings" class="nav-link{% if active == 'settings' %} is-active{% endif %}">{{ icon("sliders") }}<span>Settings</span></a>
+      <a href="/settings" data-tip="Settings" class="nav-link{% if active == 'settings' %} is-active{% endif %}"><span class="nav-ic">{{ icon("sliders") }}</span><span class="nav-text">Settings</span></a>
       {% endif %}
     </nav>
     <div class="side-foot">
-      <a href="/account" class="who{% if active == 'account' %} is-active{% endif %}">
+      <a href="/account" title="My account" class="who{% if active == 'account' %} is-active{% endif %}">
         <span class="avatar">{{ (user.full_name or user.username)[:1]|upper }}</span>
         <span class="who-text"><b>{{ user.full_name or user.username }}</b><small>{{ ROLE_LABELS[user.role] }}</small></span>
       </a>

@@ -110,5 +110,13 @@
     timer = setTimeout(function () { charts.forEach(function (c) { c.resize(); }); }, 120);
   });
 
-  TX.charts = { line: line };
+  /* Remove a chart that is no longer on the page (the slide-in panel rebuilds its charts for every site). */
+  function dispose(chart) {
+    if (!chart) return;
+    var at = charts.indexOf(chart);
+    if (at >= 0) charts.splice(at, 1);
+    chart.dispose();
+  }
+
+  TX.charts = { line: line, dispose: dispose };
 })();

@@ -347,7 +347,7 @@ def dashboard(request: Request, date: str | None = None, user: dict = Depends(se
 
 
 @app.post("/generate", dependencies=[CSRF])
-def generate(request: Request, date: str = Form(""), user: dict = Depends(security.require("editor"))):
+def generate(request: Request, date: str = Form(""), user: dict = Depends(security.require("admin"))):
     d = _parse_date(date)
     if not d:
         flash(request, "bad", "Choose a day first.")
@@ -397,7 +397,7 @@ def report_page(request: Request, d: date, user: dict = Depends(security.require
            GROUP BY feedback ORDER BY n DESC, feedback LIMIT 40""", (report["id"],))]
     th = report["thresholds"] or db.get_setting("thresholds")
     page_data = {
-        "date": d, "canEdit": security.can(user, "editor"), "kpis": KPIS, "labels": KPI_LABELS, "units": KPI_UNITS,
+        "date": d, "canEdit": security.can(user, "admin"), "kpis": KPIS, "labels": KPI_LABELS, "units": KPI_UNITS,
         "sources": {k: {"label": s.label, "short": s.short} for k, s in SOURCES.items()},
         "items": [[i["id"], i["kpi"], i["site_id"], i["name"], i["category"], i["hours"], i["pending"],
                    i["feedback"], i["source"], 1 if i["is_new"] else 0,
@@ -427,13 +427,32 @@ def report_excel(d: date, user: dict = Depends(security.require())):
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
+@app.get("/report/{d}/preview")
+def report_preview(request: Request, d: date, sheet: str = "summary", user: dict = Depends(security.require())):
+    """The Excel workbook shown on screen, one sheet at a time, before it is downloaded."""
+    try:
+        c = excel_report.collect(d)
+    except ValueError:
+        raise _not_found() from None
+    if sheet not in {key for key, _, _ in excel_report.SHEETS}:
+        sheet = "summary"
+    kpi = excel_report.SHEET_KPI.get(sheet)
+    classic = []
+    if sheet == "classic":
+        classic = [(excel_report.CLASSIC_CODE[k], i) for k in KPIS for i in c["by_kpi"][k]]
+    return render(request, "preview.html", active="report", d=d, sheet=sheet, sheets=excel_report.SHEETS, kpi=kpi,
+                  rows=c["by_kpi"][kpi] if kpi else [], classic=classic, classic_heads=excel_report.CLASSIC_HEADS, filename=excel_report.filename_for(d),
+                  counts={"pd": len(c["by_kpi"]["PD"]), "jitter": len(c["by_kpi"]["JITTER"]),
+                          "rtt": len(c["by_kpi"]["RTT"]), "new": len(c["fresh"])}, **c)
+
+
 class FeedbackIn(BaseModel):
     ids: list[int] = Field(min_length=1, max_length=5000)
     feedback: str = Field(max_length=500)
 
 
 @app.post("/api/feedback", dependencies=[CSRF])
-def save_feedback(payload: FeedbackIn, user: dict = Depends(security.require("editor"))):
+def save_feedback(payload: FeedbackIn, user: dict = Depends(security.require("admin"))):
     text = re.sub(r"\s+", " ", payload.feedback).strip()
     if not text:
         return JSONResponse({"error": "Feedback cannot be empty."}, status_code=400)
@@ -449,16 +468,67 @@ def save_feedback(payload: FeedbackIn, user: dict = Depends(security.require("ed
 # ---- sites -------------------------------------------------------------------------------
 @app.get("/sites")
 def sites_page(request: Request, q: str = "", source: str = "", category: str = "", show: str = "",
-               sort: str = "name", page: int = 1, user: dict = Depends(security.require())):
+               status: str = "", sort: str = "name", page: int = 1, user: dict = Depends(security.require())):
     latest = queries.latest_data_date()
+    th = db.get_setting("thresholds")
+    min_hours = int(th["min_hours"])
+    if status not in queries.SITE_STATUS:
+        status = ""
     result = queries.sites_page(q=q.strip()[:80], source=source, category=category, show=show, sort=sort,
-                                page=page, latest=latest)
+                                status=status, min_hours=min_hours, page=page, latest=latest)
     params = {k: v for k, v in (("q", q.strip()), ("source", source), ("category", category), ("show", show),
-                                ("sort", sort if sort != "name" else "")) if v}
+                                ("status", status), ("sort", sort if sort != "name" else "")) if v}
+
+    def url(**change) -> str:
+        """The current list address with some filters changed (an empty value removes that filter)."""
+        merged = {**params, **change}
+        text = "&".join(f"{k}={quote(str(v))}" for k, v in merged.items() if v)
+        return "/sites" + ("?" + text if text else "")
+
+    strips = queries.site_strips([r["id"] for r in result["rows"]], latest)
+    limits = {"PD": th["pd_pct"], "JITTER": th["jitter_ms"], "RTT": th["rtt_ms"]}
+    page_data = {"hours": strips["hours"], "sites": strips["sites"], "limits": limits, "min_hours": min_hours,
+                 "ids": [r["id"] for r in result["rows"]]}
     base = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
     return render(request, "sites.html", active="sites", result=result, latest=latest, q=q.strip(), source=source,
-                  category=category, show=show, sort=sort, counts=queries.site_counts(), base_query=base,
+                  category=category, show=show, status=status, sort=sort, base_query=base, url=url,
+                  summary=queries.site_summary(latest, min_hours), counts=queries.site_counts(),
+                  strips=strips, limits=limits, min_hours=min_hours, page_data=page_data,
                   filtered=bool(params.keys() - {"sort"}))
+
+
+@app.get("/api/sites/{site_id}")
+def api_site(site_id: int, date: str | None = None, user: dict = Depends(security.require())):
+    """Everything the slide-in panel of the Sites page shows for one site and day."""
+    site = queries.site_detail(site_id)
+    if not site:
+        raise _not_found()
+    d = _parse_date(date)
+    if d not in site["dates"]:
+        d = site["dates"][0] if site["dates"] else None
+    th = db.get_setting("thresholds")
+    day = queries.site_day(site_id, d, th) if d else {"daily": None, "hourly": [], "paths": []}
+    daily = day["daily"] or {}
+    src = SOURCES[site["source"]]
+    return {
+        "id": site["id"], "name": site["name"], "category": site["category"],
+        "category_label": CATEGORY_LABELS.get(site["category"], ""), "source": src.label,
+        "ext_id": site["ext_key"] if src.vendor == "ZTE" else None,
+        "first_seen": site["first_seen"], "last_seen": site["last_seen"], "date": d,
+        "name_count": len(site["names"]),
+        "limits": {"PD": th["pd_pct"], "JITTER": th["jitter_ms"], "RTT": th["rtt_ms"]},
+        "min_hours": int(th["min_hours"]),
+        "daily": {"samples": daily.get("samples"), "paths": daily.get("path_count"),
+                  "PD": {"hours": daily.get("pd_hours"), "peak": daily.get("pd_max")},
+                  "JITTER": {"hours": daily.get("jitter_hours"), "peak": daily.get("jitter_max")},
+                  "RTT": {"hours": daily.get("rtt_hours"), "peak": daily.get("rtt_max")}} if daily else None,
+        "hourly": [{"t": r["hour_ts"], "PD": r["pd"], "JITTER": r["jitter"], "RTT": r["rtt"]} for r in day["hourly"]],
+        "paths": [{"label": r["label"], "samples": r["samples"], "PD": r["pd_max"], "JITTER": r["jitter_max"],
+                   "RTT": r["rtt_max"]} for r in day["paths"][:12]],
+        "path_total": len(day["paths"]),
+        "listed": [{"kpi": r["kpi"], "hours": r["sample_count"], "pending": r["pending_days"],
+                    "feedback": r["feedback"]} for r in site["listed"] if r["report_date"] == d and not r["is_seed"]],
+    }
 
 
 @app.get("/sites/{site_id}")
@@ -489,7 +559,7 @@ def _import_seq() -> int:
 
 
 @app.get("/imports")
-def imports_page(request: Request, user: dict = Depends(security.require())):
+def imports_page(request: Request, user: dict = Depends(security.require("admin"))):
     return render(request, "imports.html", active="imports", days=queries.import_days(),
                   history=queries.import_log(), inbox=str(config.inbox_dir), archive=str(config.archive_dir),
                   failed=str(config.failed_dir), watch=watcher.status(), storage=queries.storage(),
@@ -506,7 +576,7 @@ def api_status(user: dict = Depends(security.require())):
 
 @app.post("/imports/upload", dependencies=[CSRF])
 def imports_upload(request: Request, files: list[UploadFile] = File(...),
-                   user: dict = Depends(security.require("editor"))):
+                   user: dict = Depends(security.require("admin"))):
     saved, skipped = [], []
     for upload in files:
         name = Path(upload.filename or "").name
@@ -532,7 +602,7 @@ def imports_upload(request: Request, files: list[UploadFile] = File(...),
 
 
 @app.post("/imports/scan", dependencies=[CSRF])
-def imports_scan(request: Request, user: dict = Depends(security.require("editor"))):
+def imports_scan(request: Request, user: dict = Depends(security.require("admin"))):
     watcher.nudge()
     flash(request, "info", "Checking the inbox folder now.")
     return go("/imports")
@@ -636,7 +706,7 @@ def _active_admins(excluding: int | None = None) -> int:
 
 @app.post("/settings/users/add", dependencies=[CSRF])
 def settings_user_add(request: Request, username: str = Form(""), full_name: str = Form(""),
-                      role: str = Form("viewer"), password: str = Form(""),
+                      role: str = Form("user"), password: str = Form(""),
                       user: dict = Depends(security.require("admin"))):
     username = username.strip().lower()
     problem = None

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import date
+from datetime import date, timedelta
 
 from . import db
 from .reporting import KPIS, new_sites_sql
@@ -157,9 +157,20 @@ def _like(text: str) -> str:
     return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
+WORST_HOURS = "greatest(sd.pd_hours, sd.jitter_hours, sd.rtt_hours)"
+SITE_STATUS = {          # condition on the latest day's roll-up; %(minh)s = hours needed to be listed
+    "listed": f"{WORST_HOURS} >= %(minh)s",
+    "near": f"{WORST_HOURS} BETWEEN 1 AND %(minh)s - 1",
+    "healthy": f"{WORST_HOURS} = 0",
+}
+SITES_FROM = "sites s LEFT JOIN site_daily sd ON sd.site_id = s.id AND sd.report_date = %(latest)s"
+
+
 def sites_page(*, q: str, source: str, category: str, show: str, sort: str, page: int,
-               latest: date | None, per_page: int = 50) -> dict:
-    where, params = ["true"], {"latest": latest, "d": latest}
+               latest: date | None, status: str = "", min_hours: int = 3, per_page: int = 50) -> dict:
+    where, params = ["true"], {"latest": latest, "d": latest, "minh": min_hours}
+    if status in SITE_STATUS and latest:
+        where.append(SITE_STATUS[status])
     if q:
         where.append("(s.name ILIKE %(q)s OR s.ext_key ILIKE %(q)s OR EXISTS "
                      "(SELECT 1 FROM site_names n WHERE n.site_id = s.id AND n.name ILIKE %(q)s))")
@@ -181,18 +192,76 @@ def sites_page(*, q: str, source: str, category: str, show: str, sort: str, page
         elif show == "renamed":
             where.append("(SELECT count(*) FROM site_names n WHERE n.site_id = s.id) > 1")
     cond = " AND ".join(where)
-    total = db.scalar(f"SELECT count(*) FROM sites s WHERE {cond}", params)
+    total = db.scalar(f"SELECT count(*) FROM {SITES_FROM} WHERE {cond}", params)
     pages = max(1, -(-total // per_page))
     page = min(max(page, 1), pages)
     params.update({"limit": per_page, "offset": (page - 1) * per_page})
     rows = db.query(
         f"""SELECT s.id, s.name, s.source, s.category, s.first_seen, s.last_seen,
-                   sd.pd_hours, sd.jitter_hours, sd.rtt_hours, sd.pd_max, sd.jitter_max, sd.rtt_max,
+                   sd.pd_hours, sd.jitter_hours, sd.rtt_hours, sd.pd_max, sd.jitter_max, sd.rtt_max, sd.samples,
                    (SELECT count(*) FROM site_names n WHERE n.site_id = s.id) AS name_count
-            FROM sites s LEFT JOIN site_daily sd ON sd.site_id = s.id AND sd.report_date = %(latest)s
+            FROM {SITES_FROM}
             WHERE {cond} ORDER BY {SITE_SORTS.get(sort, SITE_SORTS['name'])}
             LIMIT %(limit)s OFFSET %(offset)s""", params)
     return {"rows": rows, "total": total, "page": page, "pages": pages, "per_page": per_page}
+
+
+def site_summary(latest: date | None, min_hours: int) -> dict:
+    """Counts behind the tiles and chips of the Sites page (always for all sites, whatever the filters)."""
+    params = {"latest": latest, "d": latest, "minh": min_hours}
+    rows = db.query(
+        f"""SELECT s.category, count(*) AS total,
+                   count(*) FILTER (WHERE {SITE_STATUS['listed']}) AS listed,
+                   count(*) FILTER (WHERE {SITE_STATUS['near']}) AS near,
+                   count(*) FILTER (WHERE {SITE_STATUS['healthy']}) AS healthy
+            FROM {SITES_FROM} GROUP BY s.category""", params)
+    out = {k: sum(r[k] for r in rows) for k in ("total", "listed", "near", "healthy")}
+    out["by_category"] = {r["category"]: r["total"] for r in rows}
+    out["new"] = db.scalar(f"SELECT count(*) FROM sites s WHERE {new_sites_sql()}", params) if latest else 0
+    return out
+
+
+_hours_cache: dict = {}
+
+
+def day_hours(d: date) -> list:
+    """Every measured hour of a report day, in order (the shared time axis of the 24-hour strips)."""
+    seq = db.scalar("SELECT coalesce(max(id), 0) FROM import_files")
+    hit = _hours_cache.get(d)
+    if hit and hit[0] == seq:
+        return hit[1]
+    span = db.query_one("SELECT min(hour_ts) AS lo, max(hour_ts) AS hi FROM kpi_hourly WHERE report_date = %s", (d,))
+    lo, hi = span["lo"], span["hi"]
+    hours = []
+    if lo and hi:
+        t = lo
+        while t <= hi and len(hours) < 49:
+            hours.append(t)
+            t += timedelta(hours=1)
+    _hours_cache.clear()
+    _hours_cache[d] = (seq, hours)
+    return hours
+
+
+def site_strips(site_ids: list[int], d: date | None) -> dict:
+    """Worst-path value per hour for a handful of sites: {"hours": [...], "sites": {id: {"PD": [...], ...}}}."""
+    if not site_ids or not d:
+        return {"hours": [], "sites": {}}
+    hours = day_hours(d)
+    index = {t: i for i, t in enumerate(hours)}
+    sites = {i: {k: [None] * len(hours) for k in KPIS} for i in site_ids}
+    for r in db.query(
+            """SELECT p.site_id, h.hour_ts, max(h.pd_pct) AS pd, max(h.jitter_ms) AS jitter, max(h.rtt_ms) AS rtt
+               FROM kpi_hourly h JOIN paths p ON p.id = h.path_id
+               WHERE p.site_id = ANY(%s) AND h.report_date = %s GROUP BY 1, 2""", (site_ids, d)):
+        i = index.get(r["hour_ts"])
+        if i is None:
+            continue
+        row = sites[r["site_id"]]
+        for k, col in (("PD", "pd"), ("JITTER", "jitter"), ("RTT", "rtt")):
+            if r[col] is not None:
+                row[k][i] = round(float(r[col]), 2)
+    return {"hours": hours, "sites": sites}
 
 
 def site_counts() -> dict:

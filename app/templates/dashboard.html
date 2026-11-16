@@ -23,14 +23,14 @@
 </div>
 {% endmacro %}
 
-{% macro files_card() %}
+{% macro files_card(wide=False) %}
 <section class="card">
   <div class="card-head">
     <div><h2>Files received</h2><p>{{ received }} of 4 for this day</p></div>
     {% if received == 4 %}<span class="pill pill-good">{{ icon("check") }} Complete</span>
     {% else %}<span class="pill pill-warn">{{ icon("alert") }} {{ 4 - received }} missing</span>{% endif %}
   </div>
-  <div class="card-body">
+  <div class="card-body{% if wide %} srcs-wide{% endif %}">
     {% for s in sources %}
     <div class="src">
       <span class="src-ic {{ 'ok' if s.file else 'miss' }}">{{ icon("check" if s.file else "clock") }}</span>
@@ -40,13 +40,13 @@
         <small title="Imported {{ s.file.imported_at|dt }}">{{ s.file.site_count|num }} sites · {{ s.file.row_count|num }} rows</small>
         <small class="one-line" title="{{ s.file.filename }}">{{ s.file.filename }}</small>
         {% else %}
-        <small>Not received yet. Drop it in the inbox folder or upload it.</small>
+        <small>Not received yet.{% if can("admin") %} Drop it in the inbox folder or upload it.{% endif %}</small>
         {% endif %}
       </div>
     </div>
     {% endfor %}
   </div>
-  <div class="card-foot"><a href="/imports">Manage imports {{ icon("chev-right", "sm") }}</a></div>
+  {% if can("admin") %}<div class="card-foot"><a href="/imports">Manage imports {{ icon("chev-right", "sm") }}</a></div>{% endif %}
 </section>
 {% endmacro %}
 
@@ -57,11 +57,15 @@
   <div class="empty">
     <div class="empty-ic">{{ icon("inbox", "lg") }}</div>
     <h2>Waiting for the first KPI files</h2>
+    {% if can("admin") %}
     <p>Copy the four daily KPI Excel files into the inbox folder. They are read automatically within a few
       seconds, and this page fills in as soon as they arrive.</p>
     <span class="path">{{ inbox }}</span>
+    {% else %}
+    <p>No KPI files have been imported yet. This page fills in as soon as an administrator adds them.</p>
+    {% endif %}
     <div class="empty-actions">
-      {% if can("editor") %}<a class="btn" href="/imports">{{ icon("upload") }}<span>Upload files instead</span></a>{% endif %}
+      {% if can("admin") %}<a class="btn" href="/imports">{{ icon("upload") }}<span>Upload files instead</span></a>{% endif %}
     </div>
   </div>
 </section>
@@ -76,7 +80,7 @@
       <p class="hero-sub"><b>{{ received }} of 4</b> KPI files have been received.
         {% if received < 4 %}You can still generate the report now; it will carry a warning about the missing
         file{{ '' if received == 3 else 's' }}.{% else %}Everything is in. Generate the report when you are ready.{% endif %}</p>
-      {% if not can("editor") %}<div class="hero-chips"><span class="hero-chip">{{ icon("info", "sm") }} An editor or administrator can generate the report</span></div>{% endif %}
+      {% if not can("admin") %}<div class="hero-chips"><span class="hero-chip">{{ icon("info", "sm") }} An administrator can generate the report</span></div>{% endif %}
     </div>
     <div class="hero-side">
       <form method="get" action="/">
@@ -85,7 +89,7 @@
           {% for x in dates %}<option value="{{ x.isoformat() }}"{% if x == d %} selected{% endif %}>{{ x|d("long") }}</option>{% endfor %}
         </select>
       </form>
-      {% if can("editor") %}<div class="hero-actions">{{ generate_form("Generate report", "btn-white", "zap") }}</div>{% endif %}
+      {% if can("admin") %}<div class="hero-actions">{{ generate_form("Generate report", "btn-white", "zap") }}</div>{% endif %}
     </div>
   </div>
 </section>
@@ -134,8 +138,9 @@
       </form>
       <div class="hero-actions">
         <a class="btn btn-white" href="/report/{{ d.isoformat() }}">{{ icon("file") }}<span>Open report</span></a>
+        <a class="btn btn-glass" href="/report/{{ d.isoformat() }}/preview">{{ icon("eye") }}<span>Preview</span></a>
         <a class="btn btn-glass" href="/report/{{ d.isoformat() }}/excel">{{ icon("download") }}<span>Excel</span></a>
-        {% if can("editor") %}{{ generate_form("Regenerate", "btn-glass") }}{% endif %}
+        {% if can("admin") %}{{ generate_form("Regenerate", "btn-glass") }}{% endif %}
       </div>
     </div>
   </div>
@@ -147,7 +152,7 @@
   <div>This report may be out of date.
     <ul>{% for line in stale %}<li>{{ line }}</li>{% endfor %}</ul>
   </div>
-  {% if can("editor") %}{{ generate_form("Regenerate", "btn-sm") }}{% endif %}
+  {% if can("admin") %}{{ generate_form("Regenerate", "btn-sm") }}{% endif %}
 </div>
 {% elif report.sources_missing %}
 <div class="banner banner-warn" role="status">
@@ -179,8 +184,7 @@
   {% endfor %}
 </div>
 
-<div class="grid grid-main">
-  <section class="card">
+<section class="card">
     <div class="card-head">
       <div><h2>Sites above threshold, hour by hour</h2>
         <p>How many sites were at or above each threshold in every measured hour. Each chart has its own scale.</p></div>
@@ -200,9 +204,7 @@
       </div>
       <details class="twin" id="profile-table"><summary>View these numbers as a table</summary><div class="table-wrap"></div></details>
     </div>
-  </section>
-  {{ files_card() }}
-</div>
+</section>
 
 <div class="grid grid-3">
   <section class="card">
@@ -277,6 +279,8 @@
     {% if report.new_site_count > new_sites|length %}<div class="card-foot"><a href="/sites?show=new">View all {{ report.new_site_count|num }} new sites {{ icon("chev-right", "sm") }}</a></div>{% endif %}
   </section>
 </div>
+
+{{ files_card(wide=True) }}
 
 <section class="card">
   <div class="card-head"><div><h2>Recent reports</h2><p>Sites listed on each daily report</p></div></div>

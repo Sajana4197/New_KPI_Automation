@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Preview {{ d|d }}{% endblock %}
+{% set iso = d.isoformat() %}
+{% set tint = {"PD": "#B5D0F2", "JITTER": "#F8C6AF", "RTT": "#AEE3CF"} %}
+
+{% macro matrix(title, first_col, rows, total) %}
+<div class="xl-block">
+  <h3 class="xl-section">{{ title }}</h3>
+  <table class="xl-table xl-matrix">
+    <thead><tr><th>{{ first_col }}</th>{% for k in KPIS %}<th class="c">{{ KPI_LABELS[k] }}</th>{% endfor %}<th class="c">All KPIs</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr><td>{{ r.label }}</td>{% for k in KPIS %}<td class="c num">{{ r[k]|num }}</td>{% endfor %}<td class="c num">{{ (r.PD + r.JITTER + r.RTT)|num }}</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if total %}
+    <tfoot><tr><td>Total</td>{% for k in KPIS %}<td class="c num">{{ rows|sum(attribute=k)|num }}</td>{% endfor %}
+      <td class="c num">{{ (rows|sum(attribute="PD") + rows|sum(attribute="JITTER") + rows|sum(attribute="RTT"))|num }}</td></tr></tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endmacro %}
+
+{# Column chart drawn with plain blocks. mode: "side" = one column per KPI, "stack" = KPIs on top of each other. #}
+{% macro columns(title, rows, kpis, mode, label_key) %}
+{% set ns = namespace(top=1) %}
+{% for r in rows %}
+  {% if mode == "stack" %}{% set v = r.PD + r.JITTER + r.RTT %}{% if v > ns.top %}{% set ns.top = v %}{% endif %}
+  {% else %}{% for k in kpis %}{% if r[k] > ns.top %}{% set ns.top = r[k] %}{% endif %}{% endfor %}{% endif %}
+{% endfor %}
+<figure class="xl-chart">
+  <figcaption>{{ title }}</figcaption>
+  <div class="xl-cols">
+    {% for r in rows %}
+    <div class="xl-col">
+      <div class="xl-bars{% if mode == 'stack' %} stack{% endif %}">
+        {% if mode == "stack" %}
+          {% set v = r.PD + r.JITTER + r.RTT %}
+          <span class="xl-val">{{ v|num }}</span>
+          <div class="xl-stack" style="height:{{ '%.2f'|format(v / ns.top * 100) }}%">
+            {% for k in ["RTT", "JITTER", "PD"] %}{% if r[k] %}<i class="bar {{ k }}" style="flex:{{ r[k] }}" title="{{ r.label }} · {{ KPI_LABELS[k] }}: {{ r[k]|num }} sites"></i>{% endif %}{% endfor %}
+          </div>
+        {% else %}
+          {% for k in kpis %}
+          <div class="xl-one"><span class="xl-val">{{ r[k]|num }}</span>
+            <i class="bar {{ k }}" style="height:{{ '%.2f'|format(r[k] / ns.top * 100) }}%" title="{{ r.label }} · {{ KPI_LABELS[k] }}: {{ r[k]|num }} sites"></i></div>
+          {% endfor %}
+        {% endif %}
+      </div>
+      <span class="xl-cat">{{ r[label_key] }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% if kpis|length > 1 %}<div class="legend">{% for k in kpis %}<span><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</span>{% endfor %}</div>{% endif %}
+</figure>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <div style="min-width:0">
+    <a class="crumb" href="/report/{{ iso }}">{{ icon("chev-left", "sm") }} Daily report</a>
+    <h1>Excel preview · {{ d|d }}</h1>
+    <p>This is what the Excel file contains, sheet by sheet. Check it here, then download.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn" href="/report/{{ iso }}/excel">{{ icon("download") }}<span>Download Excel</span></a>
+  </div>
+</div>
+
+<section class="card xl">
+  <div class="xl-file">{{ icon("file") }}<b>{{ filename }}</b><span class="muted small">{{ sheets|length }} sheets</span></div>
+  <nav class="xl-tabs" aria-label="Sheets">
+    {% for key, label, color in sheets %}
+    <a href="/report/{{ iso }}/preview?sheet={{ key }}" class="xl-tab{% if key == sheet %} on{% endif %}"{% if key == sheet %} aria-current="page"{% endif %} style="--tab:{{ color }}">
+      {{ label }}{% if counts.get(key) is not none %} <small>{{ counts[key]|num }}</small>{% endif %}</a>
+    {% endfor %}
+  </nav>
+
+  {% if sheet == "summary" %}
+  <div class="xl-sheet xl-summary">
+    <div class="xl-top">
+      <img src="/static/img/sltmobitel.png" alt="SLT-Mobitel" width="150" height="57">
+      <div>
+        <div class="xl-title">TX KPI Daily Report</div>
+        <div class="xl-sub">{{ d.strftime("%A, %d %B %Y") }}</div>
+        <div class="muted small">{{ headline }}</div>
+      </div>
+    </div>
+    {% if missing %}
+    <div class="xl-note warn">Warning: {{ missing|length }} of 4 KPI files was not received ({{ missing|join(", ") }}). Sites from the missing file are not in this report.</div>
+    {% else %}
+    <div class="xl-note ok">All 4 KPI files were received for this report.</div>
+    {% endif %}
+    <div class="xl-tiles">
+      <div class="xl-tile"><span>Sites monitored</span><b>{{ report.site_count|num }}</b><small>{{ report.new_site_count|num }} new today</small></div>
+      <div class="xl-tile"><span>Sites flagged</span><b style="color:var(--brand)">{{ flagged_sites|num }}</b><small>on at least one KPI</small></div>
+      {% for k, n in [("PD", report.pd_count), ("JITTER", report.jitter_count), ("RTT", report.rtt_count)] %}
+      <div class="xl-tile"><span>{{ KPI_LABELS[k] }}</span><b class="ink-{{ k }}">{{ n|num }}</b><small>{{ rule_text[k] }}</small></div>
+      {% endfor %}
+    </div>
+    <div class="xl-two">
+      <div>
+        {{ matrix("Flagged sites by category", "Category", cat_rows, true) }}
+        {{ matrix("How long sites have been pending", "Pending", breakdown.pending.rows, false) }}
+        {{ matrix("Hours above the threshold", "Hours in the day", breakdown.hours.rows, false) }}
+        <div class="xl-block">
+          <h3 class="xl-section">Files in this report</h3>
+          <table class="xl-table xl-matrix">
+            <thead><tr><th>KPI file</th><th class="c">Status</th><th class="c">Rows</th><th class="c">Sites</th><th class="c">New sites</th></tr></thead>
+            <tbody>
+              {% for s in sources %}
+              <tr><td>{{ s.label }}</td>
+                {% if s.file %}<td class="c"><span class="xl-flag ok">Received</span></td><td class="c num">{{ s.file.row_count|num }}</td>
+                <td class="c num">{{ s.file.site_count|num }}</td><td class="c num">{{ 0 if s.file.is_initial else s.file.new_site_count|num }}</td>
+                {% else %}<td class="c"><span class="xl-flag warn">Missing</span></td><td class="c">-</td><td class="c">-</td><td class="c">-</td>{% endif %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="xl-block">
+          <h3 class="xl-section">Rules used</h3>
+          <ul class="xl-rules">{% for line in rules %}<li>{{ line }}</li>{% endfor %}</ul>
+        </div>
+      </div>
+      <div class="xl-charts">
+        {{ columns("Packet drop sites by category", cat_rows, ["PD"], "side", "code") }}
+        {{ columns("Jitter and RTT sites by category", cat_rows, ["JITTER", "RTT"], "side", "code") }}
+        {{ columns("Sites by pending days", breakdown.pending.rows, KPIS, "stack", "label") }}
+      </div>
+    </div>
+  </div>
+
+  {% elif kpi %}
+  <div class="xl-band"><b>{{ KPI_LABELS[kpi] }} · {{ rows|length|num }} sites</b><span>{{ d.strftime("%d %B %Y") }} · listed with {{ rule_text[kpi] }}</span></div>
+  <div class="xl-scroll">
+    <table class="xl-table xl-list">
+      <thead><tr><th class="c">No.</th><th>Site</th><th class="c">Category</th><th class="c">Hours above threshold</th><th class="c">Peak ({{ KPI_UNITS[kpi] }})</th>
+        <th class="c">Pending days</th><th>Feedback</th><th>KPI file</th><th class="c">New site</th></tr></thead>
+      <tbody>
+        {% for i in rows %}
+        <tr>
+          <td class="c num">{{ loop.index }}</td>
+          <td class="site">{{ i.name }}</td>
+          <td class="c">{{ i.category }}</td>
+          <td class="c num xl-bar" style="--w:{{ [i.hours / 25 * 100, 100]|min|round(1) }}%;--tint:{{ tint[kpi] }}">{{ i.hours }}</td>
+          <td class="c num">{{ "%.2f"|format(i.peak) if i.peak is not none else "" }}</td>
+          <td class="c num{% if i.pending >= 30 %} pend-long{% elif i.pending >= 7 %} pend-mid{% endif %}">{{ i.pending }}</td>
+          <td class="fbk">{{ i.feedback }}</td>
+          <td class="nowrap">{{ SOURCES[i.source].label if i.source in SOURCES else "" }}</td>
+          <td class="c">{% if i.is_new %}<span class="xl-flag ok">NEW</span>{% endif %}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9">No sites reached the threshold on this day.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% elif sheet == "new" %}
+  <div class="xl-band"><b>New sites · {{ fresh|length|num }}</b><span>{{ d.strftime("%d %B %Y") }} · sites that were not in any earlier day's files</span></div>
+  <div class="xl-scroll">
+    <table class="xl-table xl-list">
+      <thead><tr><th class="c">No.</th><th>Site</th><th>KPI file</th><th class="c">Category</th><th class="c">Paths</th><th class="c">PD hours</th><th class="c">Jitter hours</th><th class="c">RTT hours</th></tr></thead>
+      <tbody>
+        {% for s in fresh %}
+        <tr><td class="c num">{{ loop.index }}</td><td class="site">{{ s.name }}</td><td class="nowrap">{{ SOURCES[s.source].label }}</td><td class="c">{{ s.category }}</td>
+          {% for key in ["path_count", "pd_hours", "jitter_hours", "rtt_hours"] %}<td class="c num">{{ s[key] if s[key] is not none else "" }}</td>{% endfor %}</tr>
+        {% else %}
+        <tr><td colspan="8">No new sites appeared in this day's files.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="xl-scroll">
+    <table class="xl-table xl-list xl-classic">
+      <thead><tr>{% for h in classic_heads %}<th{% if loop.index0 not in (1, 6) %} class="c"{% endif %}>{{ h }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for code, i in classic %}
+        <tr><td class="c nowrap">{{ d.strftime("%d/%m/%Y") }}</td><td class="site">{{ i.name }}</td><td class="c">{{ code }}</td><td class="c num">{{ i.hours }}</td>
+          <td class="c">{{ i.category }}</td><td class="c num">{{ i.pending }}</td><td class="fbk">{{ i.feedback }}</td></tr>
+        {% else %}
+        <tr><td colspan="7">No sites reached the threshold on this day.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+<p class="small muted">The preview shows the same data and layout as the download. In Excel the lists can also be filtered and sorted.</p>
+{% endblock %}

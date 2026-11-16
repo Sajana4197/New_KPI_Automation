@@ -31,19 +31,50 @@ def _rule_text(kpi: str, th: dict) -> str:
     return f"{th['min_hours']:g} or more hours at or above {limit}"
 
 
-def build(report_date: date) -> bytes:
+SHEETS = [("summary", "Summary", BRAND), ("pd", "Packet Drop", KPI_COLOR["PD"]), ("jitter", "Jitter", KPI_COLOR["JITTER"]),
+          ("rtt", "RTT", KPI_COLOR["RTT"]), ("new", "New Sites", GREEN), ("classic", "Classic layout", MUTED)]
+SHEET_KPI = {"pd": "PD", "jitter": "JITTER", "rtt": "RTT"}
+# Classic layout: one list, one row per site and KPI.
+CLASSIC_HEADS = ["Date", "Site Name", "PD/RTT/JTR/", "Sample count exceeding the threshold", "Category", "pending days", "TXP Remark"]
+CLASSIC_CODE = {"PD": "PD", "JITTER": "JTR", "RTT": "RTT"}
+
+
+def collect(report_date: date) -> dict:
+    """Everything that goes into the workbook. The on-screen preview is drawn from this same data."""
     report = queries.get_report(report_date)
     if not report or report["is_seed"]:
         raise ValueError(f"There is no generated report for {report_date:%d %b %Y}.")
     items = queries.report_items(report)
-    sources = queries.source_status(report_date)
     th = report["thresholds"] or db.get_setting("thresholds")
-    by_kpi = {k: [i for i in items if i["kpi"] == k] for k in KPIS}
-    breakdown = queries.breakdowns(items)
-    fresh = queries.all_new_sites(report_date)
     window = db.query_one(
         "SELECT min(hour_min) AS lo, max(hour_max) AS hi FROM import_files WHERE report_date = %s AND status = 'ok'",
         (report_date,))
+    breakdown = queries.breakdowns(items)
+    measured = f"Measured {window['lo']:%d %b %H:%M} to {window['hi']:%d %b %H:%M}" if window and window["lo"] else ""
+    made = f"Generated {report['generated_at'].astimezone():%d %b %Y %H:%M}"
+    if report.get("generated_by_label"):
+        made += f" by {report['generated_by_label']}"
+    rules = [f"{KPI_LABELS[k]}: a site is listed with {_rule_text(k, th)} (worst path in each hour)." for k in KPIS]
+    rules.append("Pending days: the previous report's value plus one while the site stays listed; 0 on the first day.")
+    rules.append("Feedback is carried forward from the previous report until someone changes it.")
+    return {
+        "report": report, "items": items, "th": th, "window": window, "breakdown": breakdown,
+        "sources": queries.source_status(report_date),
+        "by_kpi": {k: [i for i in items if i["kpi"] == k] for k in KPIS},
+        "fresh": queries.all_new_sites(report_date),
+        "missing": [SOURCES[k].label for k in report["sources_missing"]],
+        "flagged_sites": len({i["site_id"] or i["name"] for i in items}),
+        "cat_rows": [{"label": f"{c} - {CATEGORY_LABELS[c]}", "code": c, **{k: r[k] for k in KPIS}}
+                     for c, r in zip(CATEGORIES, breakdown["category"]["rows"])],
+        "headline": " · ".join(x for x in (measured, made) if x),
+        "rules": rules, "rule_text": {k: _rule_text(k, th) for k in KPIS},
+    }
+
+
+def build(report_date: date) -> bytes:
+    c = collect(report_date)
+    report, items, sources, th = c["report"], c["items"], c["sources"], c["th"]
+    by_kpi, breakdown, fresh, window = c["by_kpi"], c["breakdown"], c["fresh"], c["window"]
 
     buf = io.BytesIO()
     wb = xlsxwriter.Workbook(buf, {"in_memory": True})
@@ -334,26 +365,29 @@ def build(report_date: date) -> bytes:
     # ================= Classic layout (same columns as the old notebook report) =================
     ws = wb.add_worksheet("Classic layout")
     ws.set_tab_color(MUTED)
-    classic_heads = ["Sample count exceeding the threshold", "category", "No of Pending Days", "Feedback"]
-    for b, kpi in enumerate(KPIS):
-        c0 = b * 5
-        ws.set_column(c0, c0, 56)
-        ws.set_column(c0 + 1, c0 + 3, 13)
-        ws.set_column(c0 + 4, c0 + 4, 30)
-        head = wb.add_format({"font_name": FONT, "font_size": 10, "bold": True, "font_color": "#FFFFFF",
-                              "bg_color": KPI_COLOR[kpi], "border": 1, "border_color": "#FFFFFF",
-                              "text_wrap": True, "valign": "vcenter"})
-        ws.write(0, c0, kpi, head)
-        for n, h in enumerate(classic_heads):
-            ws.write(0, c0 + 1 + n, h, head)
-        for n, i in enumerate(by_kpi[kpi]):
-            ws.write(1 + n, c0, i["name"], f["cell"])
-            ws.write(1 + n, c0 + 1, i["hours"], f["num"])
-            ws.write(1 + n, c0 + 2, i["category"], f["num"])
-            ws.write(1 + n, c0 + 3, i["pending"], f["num"])
-            ws.write(1 + n, c0 + 4, i["feedback"], f["cell"])
+    head = wb.add_format({"font_name": FONT, "font_size": 10, "bold": True, "font_color": "#FFFFFF",
+                          "bg_color": BRAND, "border": 1, "border_color": "#FFFFFF",
+                          "text_wrap": True, "align": "center", "valign": "vcenter"})
+    day = wb.add_format({"font_name": FONT, "font_size": 10, "num_format": "dd/mm/yyyy", "align": "center",
+                         "valign": "vcenter", "border": 1, "border_color": LINE})
+    for c, (h, w) in enumerate(zip(CLASSIC_HEADS, (13, 56, 14, 20, 12, 13, 36))):
+        ws.set_column(c, c, w)
+        ws.write(0, c, h, head)
+    r = 0
+    for kpi in KPIS:
+        for i in by_kpi[kpi]:
+            r += 1
+            ws.write_datetime(r, 0, report_date, day)
+            ws.write(r, 1, i["name"], f["cell"])
+            ws.write(r, 2, CLASSIC_CODE[kpi], f["num"])
+            ws.write(r, 3, i["hours"], f["num"])
+            ws.write(r, 4, i["category"], f["num"])
+            ws.write(r, 5, i["pending"], f["num"])
+            ws.write(r, 6, i["feedback"], f["cell"])
+    if r:
+        ws.autofilter(0, 0, r, 6)
     ws.set_row(0, 44)
-    ws.freeze_panes(1, 0)
+    ws.freeze_panes(1, 2)
 
     wb.close()
     return buf.getvalue()

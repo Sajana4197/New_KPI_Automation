@@ -17,7 +17,7 @@
   <section class="card">
     <div class="card-head"><div><h2>Upload files</h2><p>From this device, instead of copying them into the folder</p></div></div>
     <div class="card-body">
-      {% if can("editor") %}
+      {% if can("admin") %}
       <form method="post" action="/imports/upload" enctype="multipart/form-data" id="upload-form">
         <input type="hidden" name="csrf_token" value="{{ csrf }}">
         <input class="sr" type="file" id="upload-input" name="files" multiple accept=".xlsx,.xlsm,.xls" tabindex="-1">
@@ -33,7 +33,7 @@
         </div>
       </form>
       {% else %}
-      <p class="soft">Your account can view imports. An editor or administrator can upload files.</p>
+      <p class="soft">Only an administrator can upload files.</p>
       {% endif %}
     </div>
   </section>
@@ -41,7 +41,7 @@
   <section class="card">
     <div class="card-head">
       <div><h2>Watched folder</h2><p>Copy the day's files here and they are imported automatically</p></div>
-      {% if can("editor") %}
+      {% if can("admin") %}
       <form method="post" action="/imports/scan">
         <input type="hidden" name="csrf_token" value="{{ csrf }}">
         <button class="btn btn-ghost btn-sm">{{ icon("refresh", "sm") }}<span>Check now</span></button>

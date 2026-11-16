@@ -52,9 +52,8 @@ Without starting history, every site begins at 0 pending days. To continue the o
 
 | Role | Can do |
 |---|---|
-| Administrator | Everything, including users, thresholds and deleting data |
-| Editor | Import files, generate reports, edit feedback |
-| Viewer | View pages and download reports |
+| Administrator | Everything: import files, generate reports, edit feedback, manage users, change thresholds, delete data |
+| User | View the dashboard, reports and sites, and download the Excel report. Cannot change anything |
 
 Administrators add users under **Settings > Users**. Everyone changes their own password under
 **My account**.

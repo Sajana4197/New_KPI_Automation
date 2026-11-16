@@ -5,11 +5,16 @@ CREATE TABLE IF NOT EXISTS users (
     username       text NOT NULL UNIQUE,
     full_name      text NOT NULL DEFAULT '',
     password_hash  text NOT NULL,
-    role           text NOT NULL CHECK (role IN ('admin', 'editor', 'viewer')),
+    role           text NOT NULL CONSTRAINT users_role_check CHECK (role IN ('admin', 'user')),
     is_active      boolean NOT NULL DEFAULT true,
     created_at     timestamptz NOT NULL DEFAULT now(),
     last_login_at  timestamptz
 );
+
+-- Two roles only. Accounts from the earlier three-role set-up (editor, viewer) become users.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+UPDATE users SET role = 'user' WHERE role NOT IN ('admin', 'user');
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'user'));
 
 CREATE TABLE IF NOT EXISTS settings (
     key         text PRIMARY KEY,
