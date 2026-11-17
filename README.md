@@ -70,6 +70,33 @@ Administrators add users under **Settings > Users**. Everyone changes their own 
 Data stays in the database until an administrator deletes a day on the **Imports** page. Deleting a
 day does not delete its files from `archive`.
 
+## Fetching the dump files from a server
+
+The system can fetch the KPI dump files from a Linux server by itself, over SFTP (the same login as
+SSH). It only reads from the server; nothing there is changed or deleted.
+
+1. Open `.env` and fill in the `KPI_SFTP_` settings. `.env.example` lists them:
+
+   | Setting | Meaning |
+   |---|---|
+   | `KPI_SFTP_HOST`, `KPI_SFTP_PORT` | Server address and port (normally 22) |
+   | `KPI_SFTP_USER` | User name on the server |
+   | `KPI_SFTP_KEY_FILE` | Path to your private SSH key file (recommended), or |
+   | `KPI_SFTP_PASSWORD` | the password, if you do not use a key |
+   | `KPI_SFTP_DIR` | Folder on the server that holds the dump files |
+   | `KPI_SFTP_MINUTES` | How often to check (default 5) |
+   | `KPI_SFTP_DAYS` | How many days back a routine check looks (default 2) |
+
+2. Close and start `run.bat` again.
+3. Open **Imports**. The **Server** card shows whether the connection works and what was fetched.
+
+A routine check takes only Excel files written in the last `KPI_SFTP_DAYS` days that it has not
+fetched before. To load older days, open **Fetch older days from the server** on the Server card and
+choose the days (up to 31 at a time).
+
+The first connection remembers the server's identity in `instance\known_hosts`. If the server is
+rebuilt and the system then refuses to connect, delete that file and check again.
+
 ## Settings file
 
 `.env` in this folder holds the database password, the port and the folder locations. `.env.example`

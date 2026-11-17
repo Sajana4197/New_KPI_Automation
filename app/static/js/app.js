@@ -144,11 +144,27 @@
     }
   });
 
+  /* Headline numbers count up once when the page opens. */
+  var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  Array.prototype.forEach.call(document.querySelectorAll("[data-count]"), function (node) {
+    var end = +node.dataset.count, t0 = null;
+    if (still || !isFinite(end) || end <= 0) return;
+    var step = function (now) {
+      if (t0 === null) t0 = now;
+      var k = Math.min((now - t0) / 900, 1);
+      node.textContent = Math.round(end * (1 - Math.pow(1 - k, 3))).toLocaleString("en-US");
+      if (k < 1) window.requestAnimationFrame(step);
+    };
+    node.textContent = "0";
+    window.requestAnimationFrame(step);
+  });
+
   /* Pages that show imported data ask the server every few seconds whether anything new arrived. */
   var watch = document.querySelector("[data-watch]");
   if (watch) {
     var mode = watch.dataset.watch;
     var seen = watch.dataset.seq ? +watch.dataset.seq : null;
+    var seenServer = watch.dataset.server ? +watch.dataset.server : null;
     var live = document.getElementById("watch-state");
     var told = false;
     var tick = function () {
@@ -160,6 +176,10 @@
             live.className = "live" + (s.busy || s.waiting ? " busy" : "");
             live.textContent = s.busy ? "Importing a file…" : s.waiting
               ? s.waiting + " file" + (s.waiting === 1 ? "" : "s") + " arriving…" : "Watching the inbox folder";
+          }
+          if (mode === "reload" && seenServer !== null && s.server && s.server.seq !== seenServer && !s.server.busy) {
+            var chosen = document.querySelector("input[type=file]");
+            if (!document.querySelector("dialog[open]") && !(chosen && chosen.files.length)) { window.location.reload(); return; }
           }
           if (seen === null) { seen = s.seq; return; }
           if (s.seq !== seen && !s.busy && !s.waiting) {

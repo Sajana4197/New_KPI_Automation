@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Imports{% endblock %}
 {% block content %}
-<div class="page-head" data-watch="reload" data-seq="{{ seq }}">
+<div class="page-head" data-watch="reload" data-seq="{{ seq }}" data-server="{{ server.seq }}">
   <div>
     <h1>Imports</h1>
     <p>KPI files are read from the inbox folder as soon as they arrive.</p>
@@ -60,6 +60,55 @@
     </div>
   </section>
 </div>
+
+<section class="card" id="server-card">
+  <div class="card-head">
+    <div><h2>Server</h2><p>The KPI dump files are fetched from the server into the inbox folder. The server is only read, never changed.</p></div>
+    {% if server.enabled %}
+    <form method="post" action="/imports/server">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <button class="btn btn-ghost btn-sm" data-busy="Checking…">{{ icon("refresh", "sm") }}<span>Check now</span></button>
+    </form>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if not server.enabled %}
+    <p class="soft">No server is set up yet. Open the <span class="path">.env</span> file in the project folder, fill in
+      <code>KPI_SFTP_HOST</code>, <code>KPI_SFTP_USER</code>, <code>KPI_SFTP_DIR</code> and either
+      <code>KPI_SFTP_KEY_FILE</code> or <code>KPI_SFTP_PASSWORD</code>, then close and start <span class="path">run.bat</span> again.
+      The file <span class="path">.env.example</span> shows every setting.</p>
+    {% else %}
+    <dl class="kv">
+      <dt>{{ icon("database", "sm") }} Server</dt><dd><span class="path">{{ server.user }}@{{ server.host }}:{{ server.port }}</span> · login by {{ server.login }}</dd>
+      <dt>{{ icon("folder", "sm") }} Folder</dt><dd><span class="path">{{ server.folder }}</span></dd>
+      <dt>{{ icon("clock", "sm") }} Checks</dt><dd>Every {{ server.minutes }} minute{{ '' if server.minutes == 1 else 's' }}, for files from the last {{ server.days }} day{{ '' if server.days == 1 else 's' }}</dd>
+      <dt>{{ icon("refresh", "sm") }} Last check</dt>
+      <dd id="server-state">
+        {% if server.busy %}<span class="pill pill-info">{{ icon("refresh") }} Checking the server…</span>
+        {% elif server.error %}<span class="pill pill-crit">{{ icon("x-circle") }} Failed</span> <span class="muted">{{ server.last_check|dt }}</span>
+        {% elif server.last_check %}<span class="pill pill-good">{{ icon("check") }} Connected</span> <span class="muted">{{ server.last_check|dt }}</span>
+        {% else %}<span class="muted">Not checked yet</span>{% endif %}
+      </dd>
+      {% if server.last_files %}
+      <dt>{{ icon("download", "sm") }} Fetched</dt>
+      <dd>{% for f in server.last_files %}<div>{{ f.name }} <span class="muted small">{{ f.at|dt }}</span></div>{% endfor %}</dd>
+      {% endif %}
+    </dl>
+    {% if server.error %}<p class="server-msg bad">{{ server.error }}{% if server.last_ok %} The last successful check was {{ server.last_ok|dt }}.{% endif %}</p>
+    {% elif server.last_result %}<p class="server-msg">{{ server.last_result }}</p>{% endif %}
+    <details class="older">
+      <summary>Fetch older days from the server</summary>
+      <form method="post" action="/imports/server" class="form-row" style="margin-top:12px">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <label class="field"><span>First day</span><input class="input" type="date" name="date_from" max="{{ today.isoformat() }}" required></label>
+        <label class="field"><span>Last day</span><input class="input" type="date" name="date_to" max="{{ today.isoformat() }}" required></label>
+        <button class="btn" data-busy="Starting…">{{ icon("download") }}<span>Fetch these days</span></button>
+      </form>
+      <p class="small muted" style="margin-top:10px">Days are the dates the files were written on the server. Up to {{ max_range }} days at a time. A file that was already imported is recognised and changes nothing.</p>
+    </details>
+    {% endif %}
+  </div>
+</section>
 
 <section class="card">
   <div class="card-head"><div><h2>Days stored</h2><p>Each day keeps its data until an administrator deletes it</p></div></div>

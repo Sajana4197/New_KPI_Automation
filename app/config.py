@@ -59,6 +59,16 @@ class Config:
     failed_dir: Path
     reports_dir: Path
     secret_key: str
+    # Optional: the server the KPI dump files are fetched from over SFTP.
+    sftp_host: str = ""
+    sftp_port: int = 22
+    sftp_user: str = ""
+    sftp_password: str = ""
+    sftp_key_file: str = ""
+    sftp_key_passphrase: str = ""
+    sftp_dir: str = ""
+    sftp_minutes: int = 5
+    sftp_days: int = 2
 
     @property
     def conninfo(self) -> str:
@@ -86,6 +96,15 @@ def load_config() -> Config:
         failed_dir=_dir("KPI_FAILED_DIR", "failed"),
         reports_dir=_dir("KPI_REPORTS_DIR", "reports"),
         secret_key=_secret_key(),
+        sftp_host=env.get("KPI_SFTP_HOST", "").strip(),
+        sftp_port=int(env.get("KPI_SFTP_PORT", "").strip() or 22),
+        sftp_user=env.get("KPI_SFTP_USER", "").strip(),
+        sftp_password=env.get("KPI_SFTP_PASSWORD", ""),
+        sftp_key_file=env.get("KPI_SFTP_KEY_FILE", "").strip(),
+        sftp_key_passphrase=env.get("KPI_SFTP_KEY_PASSPHRASE", ""),
+        sftp_dir=env.get("KPI_SFTP_DIR", "").strip(),
+        sftp_minutes=max(1, int(env.get("KPI_SFTP_MINUTES", "").strip() or 5)),
+        sftp_days=max(1, int(env.get("KPI_SFTP_DAYS", "").strip() or 2)),
     )
 
 

@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import db, excel_report, queries, security, watcher
+from . import db, excel_report, queries, remote, security, watcher
 from .config import APP_DIR, APP_NAME, BASE_DIR, config
 from .reporting import KPI_LABELS, KPIS, delete_date, generate_report
 from .seed import SeedError, load_seed
@@ -37,7 +37,9 @@ _generate_lock = threading.Lock()
 async def lifespan(_: FastAPI):
     db.init_schema()
     watcher.start()
+    remote.start()
     yield
+    remote.stop()
     watcher.stop()
     db.close_pool()
 
@@ -563,14 +565,17 @@ def imports_page(request: Request, user: dict = Depends(security.require("admin"
     return render(request, "imports.html", active="imports", days=queries.import_days(),
                   history=queries.import_log(), inbox=str(config.inbox_dir), archive=str(config.archive_dir),
                   failed=str(config.failed_dir), watch=watcher.status(), storage=queries.storage(),
-                  seq=_import_seq())
+                  seq=_import_seq(), server=remote.status(), today=date.today(),
+                  max_range=remote.MAX_RANGE_DAYS)
 
 
 @app.get("/api/status")
 def api_status(user: dict = Depends(security.require())):
     state = watcher.status()
     last = state["last_import"]
+    server = remote.status()
     return {"busy": bool(state["busy"]), "waiting": len(state["waiting"]), "seq": _import_seq(),
+            "server": {"seq": server["seq"], "busy": server["busy"]},
             "last": {"filename": last["filename"], "status": last["status"]} if last else None}
 
 
@@ -605,6 +610,33 @@ def imports_upload(request: Request, files: list[UploadFile] = File(...),
 def imports_scan(request: Request, user: dict = Depends(security.require("admin"))):
     watcher.nudge()
     flash(request, "info", "Checking the inbox folder now.")
+    return go("/imports")
+
+
+@app.post("/imports/server", dependencies=[CSRF])
+def imports_server(request: Request, date_from: str = Form(""), date_to: str = Form(""),
+                   user: dict = Depends(security.require("admin"))):
+    """Visit the dump server now: new files only, or every file of the chosen days."""
+    if not remote.enabled():
+        flash(request, "bad", "No server is set up yet. Fill in the KPI_SFTP settings in the .env file and restart.")
+        return go("/imports")
+    if date_from or date_to:
+        try:
+            first, last = date.fromisoformat(date_from), date.fromisoformat(date_to)
+        except ValueError:
+            flash(request, "bad", "Choose both the first and the last day.")
+            return go("/imports")
+        problem = remote.range_problem(first, last)
+        if problem:
+            flash(request, "bad", problem)
+            return go("/imports")
+        remote.check_now(first, last)
+        db.log_activity(user, "Fetched older days from the server", f"{first:%d %b %Y} to {last:%d %b %Y}")
+        flash(request, "info", f"Fetching the server's files dated {fmt_date(first)} to {fmt_date(last)}. "
+                               "This page updates when it finishes.")
+    else:
+        remote.check_now()
+        flash(request, "info", "Checking the server now. This page updates when it finishes.")
     return go("/imports")
 
 

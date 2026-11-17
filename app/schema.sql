@@ -148,3 +148,12 @@ CREATE TABLE IF NOT EXISTS activity_log (
     action      text NOT NULL,
     detail      text
 );
+
+-- Files already fetched from the dump server, so a routine check does not fetch them twice.
+CREATE TABLE IF NOT EXISTS remote_files (
+    name        text NOT NULL,
+    size_bytes  bigint NOT NULL,
+    modified_at timestamptz NOT NULL,
+    fetched_at  timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (name, size_bytes, modified_at)
+);
