@@ -1019,3 +1019,103 @@ details.older .form-row .field { flex: 0 1 200px; }
   #report-table thead th.sel { z-index: 3; }
   #report-table tbody tr:hover td.sel { background: #f8fbff; }
 }
+
+/* ---- glass surfaces (frosted, like iOS) ---------------------------------------------------- */
+/* Soft, still colour behind the glass so the frosting has something to show (the network is drawn on top of it). */
+.shell { background:
+    radial-gradient(900px 620px at 0% 0%, rgba(0, 180, 235, .16), transparent 62%),
+    radial-gradient(820px 620px at 100% 100%, rgba(80, 183, 72, .13), transparent 62%),
+    radial-gradient(760px 520px at 100% 0%, rgba(0, 86, 162, .11), transparent 62%),
+    radial-gradient(700px 520px at 0% 100%, rgba(0, 180, 235, .08), transparent 62%), var(--page);
+  background-attachment: fixed; }
+:root {
+  --glass: linear-gradient(140deg, rgba(255, 255, 255, .74) 0%, rgba(255, 255, 255, .52) 100%);
+  --glass-soft: rgba(255, 255, 255, .55);
+  --glass-edge: rgba(255, 255, 255, .78);
+  --glass-blur: blur(22px) saturate(175%);
+  --glass-shadow: 0 10px 34px -14px rgba(10, 40, 90, .22), 0 2px 6px -2px rgba(10, 40, 90, .06), inset 0 1px 0 rgba(255, 255, 255, .95), inset 0 -1px 0 rgba(255, 255, 255, .35);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card, .tile, .side, .side-foot {
+    background: var(--glass); border-color: var(--glass-edge); box-shadow: var(--glass-shadow);
+    -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+  .side { border-radius: 26px; }
+  .tile:hover { border-color: rgba(255, 255, 255, .95); box-shadow: 0 16px 38px -14px rgba(10, 40, 90, .3), inset 0 1px 0 #fff; }
+  /* Glass inside glass: lighter frosting, no second blur. */
+  .side-foot { background: rgba(255, 255, 255, .6); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .cat-lane { background: linear-gradient(100deg, rgba(0, 180, 235, .07), rgba(255, 255, 255, .25) 45%, rgba(80, 183, 72, .06)); border-color: var(--glass-edge); }
+  .cat-kpi, .worst-row { background: var(--glass-soft); border-color: var(--glass-edge); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9); }
+  .fx-groups { background: rgba(255, 255, 255, .42); border-color: var(--glass-edge); }
+  .table th { background: transparent; }
+  #report-table thead th { background: rgba(255, 255, 255, .82); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  #report-table td.sel, #report-table th.sel { background: rgba(255, 255, 255, .9); }
+  .table tbody tr:hover td { background: rgba(255, 255, 255, .55); }
+  /* Sheets and dialogs: a thicker, brighter glass. */
+  dialog.drawer, dialog.modal { background: rgba(255, 255, 255, .8); -webkit-backdrop-filter: blur(28px) saturate(180%); backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid var(--glass-edge); }
+  .drawer-foot, .modal-foot { background: rgba(255, 255, 255, .5); }
+  dialog.drawer::backdrop, dialog.modal::backdrop { background: rgba(15, 27, 45, .28); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+}
+@media (max-width: 960px) {
+  .topbar { background: rgba(255, 255, 255, .6); -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%); border-bottom-color: var(--glass-edge); }
+  .tabbar { background: rgba(255, 255, 255, .62); -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%); border-top-color: var(--glass-edge); }
+}
+@media print { .card, .tile { background: #fff; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; } }
+
+/* ---- glass, stronger: see-through panels over richer colour ---------------------------- */
+.shell { background:
+    radial-gradient(620px 520px at 8% 10%, rgba(0, 180, 235, .42), transparent 70%),
+    radial-gradient(560px 480px at 92% 18%, rgba(0, 86, 162, .34), transparent 70%),
+    radial-gradient(640px 560px at 85% 88%, rgba(80, 183, 72, .36), transparent 70%),
+    radial-gradient(560px 480px at 22% 92%, rgba(0, 180, 235, .28), transparent 70%),
+    radial-gradient(520px 420px at 52% 50%, rgba(140, 200, 255, .22), transparent 70%),
+    linear-gradient(160deg, #e7f1fb 0%, #eef5fb 50%, #eaf6ee 100%);
+  background-attachment: fixed; }
+:root {
+  --glass: linear-gradient(150deg, rgba(255, 255, 255, .50) 0%, rgba(255, 255, 255, .26) 45%, rgba(255, 255, 255, .16) 100%);
+  --glass-soft: rgba(255, 255, 255, .34);
+  --glass-edge: rgba(255, 255, 255, .62);
+  --glass-blur: blur(20px) saturate(185%);
+  --glass-shadow: 0 14px 40px -16px rgba(10, 40, 90, .30), inset 0 1px 0 rgba(255, 255, 255, .95), inset 1px 0 0 rgba(255, 255, 255, .45),
+    inset 0 -1px 0 rgba(255, 255, 255, .18), inset -1px 0 0 rgba(255, 255, 255, .18);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* A light-catching sheen across the top-left of each glass panel. */
+  .card, .tile { position: relative; isolation: isolate; }
+  .side { isolation: isolate; }        /* stays sticky; sticky already positions the sheen */
+  .card::before, .tile::before, .side::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(125deg, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, .12) 28%, rgba(255, 255, 255, 0) 52%); }
+  .side-foot { background: rgba(255, 255, 255, .38); }
+  .cat-lane { background: rgba(255, 255, 255, .16); }
+  .cat-kpi, .worst-row { background: rgba(255, 255, 255, .30); }
+  .cat-kpi.is-top.PD { background: rgba(42, 120, 214, .12); }
+  .cat-kpi.is-top.JITTER { background: rgba(235, 104, 52, .12); }
+  .cat-kpi.is-top.RTT { background: rgba(27, 175, 122, .12); }
+  .fx-groups { background: rgba(255, 255, 255, .24); }
+  .input, .select { background-color: rgba(255, 255, 255, .62); }
+  .table td { border-bottom-color: rgba(255, 255, 255, .55); }
+  .table th { border-bottom-color: rgba(255, 255, 255, .7); }
+  #report-table thead th { background: rgba(255, 255, 255, .55); }
+  #report-table td.sel { background: transparent; -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+  #report-table th.sel { background: rgba(255, 255, 255, .55); }
+  .table tbody tr:hover td, #report-table tbody tr:hover td.sel { background: rgba(255, 255, 255, .35); }
+  .tag { background: rgba(255, 255, 255, .55); }
+  dialog.drawer, dialog.modal { background: rgba(255, 255, 255, .62); }
+}
+
+/* ---- glass without colour: neutral page, clear (lightly frosted) panels ------------------ */
+.shell { background: var(--page); }
+:root { --glass-blur: blur(6px) saturate(120%); }
+
+/* ---- glass, more transparent -------------------------------------------------------------- */
+:root { --glass: linear-gradient(150deg, rgba(255, 255, 255, .32) 0%, rgba(255, 255, 255, .14) 45%, rgba(255, 255, 255, .07) 100%); }
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card::before, .tile::before, .side::before { background: linear-gradient(125deg, rgba(255, 255, 255, .45) 0%, rgba(255, 255, 255, .08) 28%, rgba(255, 255, 255, 0) 52%); }
+  .side-foot { background: rgba(255, 255, 255, .24); }
+  .cat-lane { background: rgba(255, 255, 255, .08); }
+  .cat-kpi, .worst-row { background: rgba(255, 255, 255, .18); }
+  .fx-groups { background: rgba(255, 255, 255, .14); }
+  .input, .select { background-color: rgba(255, 255, 255, .45); }
+  #report-table thead th, #report-table th.sel { background: rgba(255, 255, 255, .40); }
+  .tag { background: rgba(255, 255, 255, .40); }
+}
