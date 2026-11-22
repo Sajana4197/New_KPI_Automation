@@ -218,23 +218,43 @@
 <section class="card" id="category-card">
   <div class="card-head">
     <div><h2>Issues by site category</h2>
-      <p>Sites on this report in each category. Each chart has its own scale.</p></div>
+      <p>Sites listed for each KPI in each category. Each ring is the category's share of all sites listed for that KPI.
+        Click a ring to see the worst sites.</p></div>
   </div>
   <div class="card-body">
-    <div class="cat-tiles">
+    <svg class="sr" aria-hidden="true" focusable="false"><defs>
+      <linearGradient id="cat-g-PD" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00B4EB"/><stop offset="1" stop-color="#2a78d6"/></linearGradient>
+      <linearGradient id="cat-g-JITTER" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffb347"/><stop offset="1" stop-color="#eb6834"/></linearGradient>
+      <linearGradient id="cat-g-RTT" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8be37d"/><stop offset="1" stop-color="#1baf7a"/></linearGradient>
+    </defs></svg>
+    <div class="cat-lanes">
       {% for c in categories %}
-      <div class="cat-tile">
-        <div class="cat-name"><b>{{ c.code }}</b><span>{{ c.label }}</span></div>
-        <div class="cat-value">{{ c.flagged|num }}</div>
-        <div class="cat-meta">of {{ c.total|num }} sites · <b>{{ '%.1f'|format(c.share) }} %</b></div>
-      </div>
-      {% endfor %}
-    </div>
-    <div class="multiples">
-      {% for k in KPIS %}
-      <div class="multiple">
-        <div class="multiple-head"><h3><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</h3></div>
-        <div class="chart chart-cat" id="cat-{{ k }}" role="img" aria-label="{{ KPI_LABELS[k] }} sites by category: {% for c in categories %}{{ c.code }} {{ c[k] }}{{ ', ' if not loop.last }}{% endfor %}"></div>
+      <div class="cat-lane" style="--i:{{ loop.index0 }}">
+        {% set issues = c.PD + c.JITTER + c.RTT %}
+        <div class="cat-id">
+          <span class="cat-icon">{{ icon("cat-" ~ c.code) }}</span>
+          <div class="cat-who"><b>{{ c.code }}</b><span>{{ c.label }}</span>
+            <em class="cat-issues{% if not issues %} zero{% endif %}">{{ issues|num }} issue{{ '' if issues == 1 else 's' }}</em></div>
+        </div>
+        {% for k in KPIS %}
+        {% set mx = categories|map(attribute=k)|max %}
+        {% set tot = categories|sum(attribute=k) %}
+        {% set fill = (c[k] / tot * 100 if tot else 0) %}
+        <div class="cat-kpi {{ k }}{% if c[k] and c[k] == mx %} is-top{% endif %}"{% if c[k] %} role="button" tabindex="0"
+             data-cat="{{ c.code }}" data-kpi="{{ k }}" title="Show the worst {{ KPI_LABELS[k] }} sites in {{ c.code }}"
+             aria-label="{{ c.code }} {{ KPI_LABELS[k] }}: {{ c[k] }} sites. Show the worst sites"{% endif %}>
+          <span class="cat-kpi-name"><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</span>
+          <div class="cat-gauge">
+            <svg viewBox="0 0 80 80" aria-hidden="true">
+              <circle class="cg-ticks" cx="40" cy="40" r="37"/>
+              <circle class="cg-track" cx="40" cy="40" r="30"/>
+              {% if c[k] %}<circle class="cg-value" cx="40" cy="40" r="30" pathLength="100" stroke="url(#cat-g-{{ k }})"
+                stroke-dasharray="{{ '%.1f'|format([fill, 1.5]|max) }} 100"/>{% endif %}
+            </svg>
+            <div class="cg-text"><b data-countup="{{ c[k] }}">{{ c[k]|num }}</b><small>{{ ('%.1f' if 0 < fill < 10 else '%.0f')|format(fill) }} %</small></div>
+          </div>
+        </div>
+        {% endfor %}
       </div>
       {% endfor %}
     </div>
@@ -339,6 +359,17 @@
     </table>
   </div>
 </section>
+
+<dialog class="drawer" id="cat-drawer" aria-label="Worst sites">
+  <div class="drawer-bar">
+    <span class="small muted" id="cat-drawer-crumb"></span>
+    <button class="icon-btn" type="button" data-close title="Close" aria-label="Close">{{ icon("x") }}</button>
+  </div>
+  <div class="drawer-body" id="cat-drawer-body"></div>
+  <div class="drawer-foot">
+    <a class="btn" id="cat-drawer-all" href="/report/{{ d.isoformat() }}">{{ icon("file") }}<span>See all in the daily report</span></a>
+  </div>
+</dialog>
 
 <script type="application/json" id="page-data">{{ page_data|data_json }}</script>
 {% endif %}

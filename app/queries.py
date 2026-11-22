@@ -107,6 +107,9 @@ def breakdowns(items: list[dict]) -> dict:
     }
 
 
+WORST_LIMIT = 10          # sites listed in the dashboard's worst-sites panel for one category and KPI
+
+
 def category_summary(d: date, items: list[dict]) -> list[dict]:
     """For each site category: sites measured that day, sites on the report, and listed sites per KPI."""
     totals = {r["category"]: r["n"] for r in db.query(
@@ -117,8 +120,14 @@ def category_summary(d: date, items: list[dict]) -> list[dict]:
         mine = [i for i in items if i["category"] == c]
         total = totals.get(c, 0)
         flagged = len({i["site_id"] or i["name"] for i in mine})
+        top = {}
+        for k in KPIS:
+            rows = sorted((i for i in mine if i["kpi"] == k),
+                          key=lambda i: (-i["hours"], -(i["peak"] if i["peak"] is not None else -1), -i["pending"], i["name"].lower()))
+            top[k] = [{"name": i["name"], "site_id": i["site_id"], "hours": i["hours"], "peak": i["peak"],
+                       "pending": i["pending"], "feedback": i["feedback"], "is_new": bool(i["is_new"])} for i in rows[:WORST_LIMIT]]
         out.append({"code": c, "label": CATEGORY_LABELS[c], "total": total, "flagged": flagged,
-                    "share": flagged / total * 100 if total else 0,
+                    "share": flagged / total * 100 if total else 0, "top": top,
                     **{k: sum(1 for i in mine if i["kpi"] == k) for k in KPIS}})
     return out
 

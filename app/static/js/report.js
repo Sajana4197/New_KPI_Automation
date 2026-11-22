@@ -14,7 +14,10 @@
 
   var state = { kpi: "PD", q: "", cat: "", source: "", pending: "", onlyNew: false,
                 sort: "hours", dir: -1, page: 1, selected: new Set() };
-  var fromHash = (window.location.hash || "").replace("#", "").toUpperCase();
+  /* The address may name a KPI and a category, e.g. #PD-CBD (used by the dashboard's worst-sites panel). */
+  var hashParts = (window.location.hash || "").replace("#", "").toUpperCase().split("-");
+  var fromHash = hashParts[0];
+  if (/^(CBD|GC|IBS|OS)$/.test(hashParts[1] || "")) state.cat = hashParts[1];
   if (data.kpis.indexOf(fromHash) >= 0) state.kpi = fromHash;
   else {
     var firstWithRows = data.kpis.filter(function (k) { return items.some(function (i) { return i.kpi === k; }); })[0];
@@ -269,8 +272,9 @@
   prevBtn.addEventListener("click", function () { state.page -= 1; apply(); window.scrollTo({ top: 0, behavior: "smooth" }); });
   nextBtn.addEventListener("click", function () { state.page += 1; apply(); window.scrollTo({ top: 0, behavior: "smooth" }); });
   window.addEventListener("hashchange", function () {
-    var k = (window.location.hash || "").replace("#", "").toUpperCase();
-    if (data.kpis.indexOf(k) >= 0 && k !== state.kpi) { state.kpi = k; state.selected.clear(); reset(); }
+    var parts = (window.location.hash || "").replace("#", "").toUpperCase().split("-"), k = parts[0];
+    var cat = /^(CBD|GC|IBS|OS)$/.test(parts[1] || "") ? parts[1] : state.cat;
+    if (data.kpis.indexOf(k) >= 0 && (k !== state.kpi || cat !== state.cat)) { state.kpi = k; state.cat = cat; state.selected.clear(); reset(); }
   });
 
   apply();
