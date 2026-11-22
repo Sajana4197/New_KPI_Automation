@@ -12,6 +12,11 @@
   /* The page can ask for a busier network: data-density (more sites) and data-speed (faster drift and packets). */
   var DENSITY = Math.max(0.5, Math.min(3, +canvas.dataset.density || 1));
   var SPEED = Math.max(0.5, Math.min(3, +canvas.dataset.speed || 1));
+  var DARK = canvas.dataset.tone === "dark";
+  var LINE = DARK ? "160,215,255" : "0,86,162";
+  var NODE = DARK ? "rgba(190,228,255,.55)" : "rgba(0,86,162,.42)";
+  var HUB = DARK ? "rgba(0,200,255,.85)" : "rgba(0,180,235,.55)";
+  var LINE_A = DARK ? 0.22 : 0.26;
   var fitParent = canvas.dataset.fit === "parent";     /* the sign-in page draws it in one panel only */
   var w = 0, h = 0, nodes = [], packets = [], rings = [], last = 0, running = false;
 
@@ -79,13 +84,13 @@
         if (Math.abs(a.x - b.x) > LINK || Math.abs(a.y - b.y) > LINK) continue;
         d = Math.hypot(a.x - b.x, a.y - b.y);
         if (d > LINK) continue;
-        ctx.strokeStyle = "rgba(0,86,162," + (0.26 * (1 - d / LINK)).toFixed(3) + ")";
+        ctx.strokeStyle = "rgba(" + LINE + "," + (LINE_A * (1 - d / LINK)).toFixed(3) + ")";
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       }
     }
     for (i = 0; i < nodes.length; i++) {
       a = nodes[i];
-      ctx.fillStyle = a.hub ? "rgba(0,180,235,.55)" : "rgba(0,86,162,.42)";
+      ctx.fillStyle = a.hub ? HUB : NODE;
       ctx.beginPath(); ctx.arc(a.x, a.y, a.hub ? a.r + 1.2 : a.r, 0, 6.2832); ctx.fill();
       if (a.hub) {
         ctx.strokeStyle = "rgba(0,180,235,.22)";

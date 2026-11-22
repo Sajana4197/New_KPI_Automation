@@ -171,6 +171,38 @@
     window.requestAnimationFrame(step);
   });
 
+  /* Password boxes: an eye button shows or hides the text, and a meter rates a new password. */
+  document.addEventListener("click", function (ev) {
+    var eye = ev.target.closest("[data-pw-toggle]");
+    if (!eye) return;
+    var input = eye.parentNode.querySelector("input");
+    var show = input.type === "password";
+    input.type = show ? "text" : "password";
+    eye.classList.toggle("on", show);
+    eye.setAttribute("aria-label", show ? "Hide password" : "Show password");
+    eye.title = show ? "Hide password" : "Show password";
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-pw-meter]"), function (input) {
+    var meter = document.getElementById(input.dataset.pwMeter);
+    if (!meter) return;
+    var note = meter.querySelector("small"), first = note.textContent;
+    var LABELS = ["Too short", "Weak", "Fair", "Good", "Strong"];
+    input.addEventListener("input", function () {
+      var v = input.value, score = 0;
+      if (v.length >= 8) {
+        score = 1;
+        if (v.length >= 12) score++;
+        if (/[a-z]/.test(v) && /[A-Z]/.test(v)) score++;
+        if (/\d/.test(v) && /[^A-Za-z0-9]/.test(v)) score++;
+        else if (/\d/.test(v) || /[^A-Za-z0-9]/.test(v)) score += 0.5;
+        score = Math.min(4, Math.floor(score));
+        if (score < 1) score = 1;
+      }
+      meter.dataset.score = v ? String(score) : "";
+      note.textContent = v ? LABELS[score] + (score < 3 ? " · longer, with capitals, numbers and symbols, is stronger" : "") : first;
+    });
+  });
+
   /* Pages that show imported data ask the server every few seconds whether anything new arrived. */
   var watch = document.querySelector("[data-watch]");
   if (watch) {
