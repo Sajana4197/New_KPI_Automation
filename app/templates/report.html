@@ -44,6 +44,7 @@
 </div>
 {% endif %}
 
+<div class="tabs-label">Choose a KPI</div>
 <div class="tabs" role="tablist" aria-label="KPI">
   {% for k, count, rule in [
       ("PD", report.pd_count, "Hours with packet drop at or above " ~ (thresholds.pd_pct|g) ~ " %"),
@@ -55,26 +56,48 @@
 </div>
 
 <section class="card" id="report-card">
-  <div class="filters">
-    <label class="search">{{ icon("search") }}<span class="sr">Search sites</span>
-      <input class="input input-sm" id="f-q" type="search" placeholder="Search site name" autocomplete="off"></label>
-    <div class="chips" id="f-cat" role="group" aria-label="Category">
-      <button class="chip on" type="button" data-cat="">All</button>
-      {% for c in CATEGORIES %}<button class="chip" type="button" data-cat="{{ c }}" title="{{ CATEGORY_LABELS[c] }}">{{ c }} <small></small></button>{% endfor %}
+  <div class="filters filters-v2">
+    <div class="fx-top">
+      <label class="search fx-search">{{ icon("search") }}<span class="sr">Search sites</span>
+        <input class="input input-sm" id="f-q" type="search" placeholder="Search by site name" autocomplete="off"></label>
+      <span class="fx-count" id="f-count" aria-live="polite"></span>
     </div>
-    <select class="select select-sm" id="f-source" aria-label="KPI file">
-      <option value="">All KPI files</option>
-      {% for k in SOURCE_ORDER %}<option value="{{ k }}">{{ SOURCES[k].label }}</option>{% endfor %}
-    </select>
-    <select class="select select-sm" id="f-pending" aria-label="Pending days">
-      <option value="">Any pending days</option>
-      <option value="0">First day only</option>
-      <option value="1">1 day or more</option>
-      <option value="7">7 days or more</option>
-      <option value="30">30 days or more</option>
-    </select>
-    <button class="chip" type="button" id="f-new" aria-pressed="false">{{ icon("sparkle", "sm") }} New sites</button>
-    <span class="filters-end" id="f-count"></span>
+    <div class="fx-groups">
+      <div class="fx-group fx-cat">
+        <span class="fx-label" id="lbl-cat">Site category</span>
+        <div class="seg" id="f-cat" role="group" aria-labelledby="lbl-cat">
+          <button class="chip on" type="button" data-cat="">All</button>
+          {% for c in CATEGORIES %}<button class="chip" type="button" data-cat="{{ c }}" title="{{ CATEGORY_LABELS[c] }}">{{ c }} <small></small></button>{% endfor %}
+        </div>
+      </div>
+      <label class="fx-group">
+        <span class="fx-label">Source file</span>
+        <select class="select select-sm" id="f-source">
+          <option value="">All 4 files</option>
+          {% for k in SOURCE_ORDER %}<option value="{{ k }}">{{ SOURCES[k].label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="fx-group">
+        <span class="fx-label">Days on the report</span>
+        <select class="select select-sm" id="f-pending">
+          <option value="">Any number of days</option>
+          <option value="0">First day only</option>
+          <option value="1">1 day or more</option>
+          <option value="7">7 days or more</option>
+          <option value="30">30 days or more</option>
+        </select>
+      </label>
+      <div class="fx-group">
+        <span class="fx-label">Show</span>
+        <button class="fx-switch" type="button" id="f-new" role="switch" aria-checked="false" aria-pressed="false">
+          <i aria-hidden="true"></i><span>New sites only</span></button>
+      </div>
+    </div>
+    <div class="fx-active hide" id="f-active">
+      <span class="fx-label">Filtering by</span>
+      <div class="fx-tags" id="f-tags"></div>
+      <button class="link-btn" type="button" id="f-clear">Clear all filters</button>
+    </div>
   </div>
   <div class="table-wrap">
     <table class="table cards" id="report-table">
@@ -86,9 +109,7 @@
         <th><button class="th-sort" type="button" data-sort="hours"><span id="th-hours" title="Hours at or above the threshold">Hours above</span>{{ icon("arrow-down") }}</button></th>
         <th class="right"><button class="th-sort" type="button" data-sort="peak">Peak{{ icon("arrow-down") }}</button></th>
         <th><button class="th-sort" type="button" data-sort="pending">Pending{{ icon("arrow-down") }}</button></th>
-        <th><button class="th-sort" type="button" data-sort="feedback">Feedback{{ icon("arrow-down") }}</button></th>
-        <th><button class="th-sort" type="button" data-sort="source">File{{ icon("arrow-down") }}</button></th>
-      </tr></thead>
+        <th><button class="th-sort" type="button" data-sort="feedback">Feedback{{ icon("arrow-down") }}</button></th>      </tr></thead>
       <tbody></tbody>
     </table>
   </div>

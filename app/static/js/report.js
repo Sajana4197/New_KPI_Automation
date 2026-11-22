@@ -82,10 +82,38 @@
     }).sort(compare);
     var pages = Math.max(1, Math.ceil(current.length / PER_PAGE));
     state.page = Math.min(Math.max(1, state.page), pages);
-    countText.textContent = current.length === inTab.length
-      ? TX.num(inTab.length) + (inTab.length === 1 ? " site" : " sites")
-      : TX.num(current.length) + " of " + TX.num(inTab.length) + " sites";
+    var kpiName = { PD: "Packet Drop", JITTER: "Jitter", RTT: "RTT" }[state.kpi] || "";
+    countText.textContent = "";
+    if (current.length === inTab.length) {
+      countText.append("Showing all ", el("b", { text: TX.num(inTab.length) }), " " + kpiName + (inTab.length === 1 ? " site" : " sites"));
+    } else {
+      countText.append("Showing ", el("b", { text: TX.num(current.length) }), " of " + TX.num(inTab.length) + " " + kpiName + " sites");
+    }
+    showActive();
     render(pages, inTab.length);
+  }
+
+  /* The filters that are on, as tags that can be removed one at a time. */
+  var activeBox = document.getElementById("f-active"), tagBox = document.getElementById("f-tags");
+  var CAT_NAMES = { CBD: "Central Business District", GC: "Greater Colombo", IBS: "In-Building", OS: "Outstation" };
+  function showActive() {
+    var tags = [];
+    if (state.q.trim()) tags.push(["Name contains", "“" + state.q.trim() + "”", function () { qInput.value = ""; state.q = ""; }]);
+    if (state.cat) tags.push(["Category", state.cat + " · " + (CAT_NAMES[state.cat] || ""), function () { state.cat = ""; }]);
+    if (state.source) tags.push(["Source file", sourceSel.options[sourceSel.selectedIndex].text, function () { sourceSel.value = ""; state.source = ""; }]);
+    if (state.pending) tags.push(["Days on the report", pendingSel.options[pendingSel.selectedIndex].text, function () { pendingSel.value = ""; state.pending = ""; }]);
+    if (state.onlyNew) tags.push(["Show", "New sites only", function () { state.onlyNew = false; syncNew(); }]);
+    tagBox.textContent = "";
+    tags.forEach(function (t) {
+      tagBox.appendChild(el("button", { class: "fx-tag", type: "button", title: "Remove this filter",
+        on: { click: function () { t[2](); reset(); } } },
+        el("span", { class: "fx-tag-k", text: t[0] + ":" }), " " + t[1], TX.icon("x", "sm")));
+    });
+    activeBox.classList.toggle("hide", !tags.length);
+  }
+  function syncNew() {
+    newChip.setAttribute("aria-pressed", state.onlyNew ? "true" : "false");
+    newChip.setAttribute("aria-checked", state.onlyNew ? "true" : "false");
   }
 
   function render(pages, tabTotal) {
@@ -146,9 +174,6 @@
     tr.appendChild(el("td", { class: "right num nowrap", data: { label: "Peak" }, text: peakText(i) }));
     tr.appendChild(el("td", { data: { label: "Pending" } }, pendingPill(i.pending)));
     tr.appendChild(el("td", { class: "full wrap", data: { label: "Feedback" } }, feedbackCell(i)));
-    var src = data.sources[i.source];
-    tr.appendChild(el("td", { data: { label: "File" } },
-      src ? el("span", { class: "tag", title: src.label, text: src.short }) : el("span", { class: "muted", text: "–" })));
     return tr;
   }
 
@@ -258,7 +283,13 @@
   pendingSel.addEventListener("change", function () { state.pending = pendingSel.value; reset(); });
   newChip.addEventListener("click", function () {
     state.onlyNew = !state.onlyNew;
-    newChip.setAttribute("aria-pressed", state.onlyNew ? "true" : "false");
+    syncNew();
+    reset();
+  });
+  document.getElementById("f-clear").addEventListener("click", function () {
+    qInput.value = ""; sourceSel.value = ""; pendingSel.value = "";
+    state.q = ""; state.cat = ""; state.source = ""; state.pending = ""; state.onlyNew = false;
+    syncNew();
     reset();
   });
   sortButtons.forEach(function (b) {

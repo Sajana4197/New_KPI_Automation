@@ -967,3 +967,55 @@ details.older .form-row .field { flex: 0 1 200px; }
   .anim-ready .cat-lane, .anim-ready .cat-kpi, .anim-ready .cat-icon { opacity: 1; transform: none; animation: none !important; }
   .cg-ticks, .cat-kpi.is-top::after, .worst-row, .worst-rank, .worst-head, .worst-row:first-child .worst-rank { animation: none !important; }
 }
+
+/* ---- daily report: clearer filters ------------------------------------------------------ */
+.tabs-label { margin-bottom: -8px; font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.filters.filters-v2 { display: flex; flex-direction: column; align-items: stretch; gap: 14px; padding: 16px 22px; }
+.fx-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.fx-search { flex: 1 1 320px; max-width: 520px; }
+.fx-count { margin-left: auto; font-size: 14px; color: var(--text-2); }
+.fx-count b { color: var(--text); font-weight: 750; }
+.fx-groups { display: flex; align-items: flex-end; gap: 14px 22px; flex-wrap: wrap; padding: 14px 16px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line-2); }
+.fx-group { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fx-label { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.fx-group .select { flex: none; min-width: 190px; background-color: var(--surface); }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 3px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); }
+.seg .chip { min-height: 32px; border-color: transparent; background: transparent; }
+.seg .chip:hover { background: var(--surface-2); }
+.seg .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; box-shadow: 0 6px 14px -8px rgba(0, 86, 162, .9); }
+.seg .chip.on small { color: #fff; opacity: .85; }
+.fx-switch { display: inline-flex; align-items: center; gap: 10px; min-height: 38px; padding: 4px 14px 4px 6px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--text-2); font-weight: 650; font-size: 13.5px; cursor: pointer; }
+.fx-switch i { position: relative; width: 34px; height: 20px; border-radius: 99px; background: #d5deea; transition: background .2s ease; }
+.fx-switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(15, 27, 45, .3); transition: transform .2s ease; }
+.fx-switch[aria-checked="true"] { border-color: #b5d0ee; color: var(--brand); background: var(--brand-soft); }
+.fx-switch[aria-checked="true"] i { background: var(--brand); }
+.fx-switch[aria-checked="true"] i::after { transform: translateX(14px); }
+.fx-active { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fx-active.hide { display: none; }
+.fx-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.fx-tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px 5px 12px; border: 1px solid #b5d0ee; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: 13px; font-weight: 650; cursor: pointer; }
+.fx-tag-k { font-weight: 500; color: var(--text-2); }
+.fx-tag:hover { border-color: var(--brand); }
+.fx-tag .icon { opacity: .7; }
+@media (max-width: 720px) {
+  .filters.filters-v2 { padding: 12px 16px; }
+  .fx-groups { padding: 12px; gap: 12px; }
+  .fx-group, .fx-group .select { width: 100%; min-width: 0; }
+  .fx-count { margin-left: 0; }
+}
+
+/* ---- daily report table: fit the space, keep the sideways scroll bar in view -------------- */
+@media (min-width: 961px) {
+  #report-table th, #report-table td { padding-left: 10px; padding-right: 10px; }
+  #report-table th:first-child, #report-table td:first-child { padding-left: 18px; }
+  #report-table th:last-child, #report-table td:last-child { padding-right: 18px; }
+  #report-table td.site { min-width: 200px; }
+  #report-table td.wrap { min-width: 140px; }
+  #report-table .hours { width: 96px; }
+  /* The table scrolls inside a box as tall as the window, so both scroll bars are always on screen. */
+  #report-card .table-wrap { max-height: calc(100vh - 150px); overflow: auto; }
+  #report-table thead th { position: sticky; top: 0; z-index: 2; box-shadow: inset 0 -1px 0 var(--line); }
+  #report-table td.sel, #report-table th.sel { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  #report-table thead th.sel { z-index: 3; }
+  #report-table tbody tr:hover td.sel { background: #f8fbff; }
+}
