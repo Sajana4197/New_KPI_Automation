@@ -12,11 +12,12 @@
   {% endif %}
 {% endmacro %}
 
-{% macro tile(label, value, href, on, note, tone="") %}
-<a class="tile stat-tile{% if tone %} tone-{{ tone }}{% endif %}{% if on %} is-on{% endif %}" href="{{ href }}"{% if on %} aria-current="true"{% endif %}>
-  <span class="tile-label">{{ label }}</span>
-  <span class="tile-value">{{ value|num }}</span>
-  <span class="tile-meta"><span>{{ note }}</span></span>
+{% macro tile(label, value, href, on, note, tone="", ic="tower") %}
+<a class="set-stat site-stat{% if tone %} tone-{{ tone }}{% endif %}{% if on %} is-on{% endif %}" href="{{ href }}"{% if on %} aria-current="true"{% endif %}>
+  <span class="set-stat-ic">{{ icon(ic) }}</span>
+  <span class="set-stat-k">{{ label }}</span>
+  <span class="set-stat-v">{{ value|num }}</span>
+  <span class="set-stat-s">{{ note }}</span>
 </a>
 {% endmacro %}
 
@@ -30,47 +31,59 @@
   </div>
 </div>
 
-<div class="tiles">
-  {{ tile("All sites", summary.total, url(status="", show="", page=""), not status and show != "new", "every site ever seen") }}
-  {{ tile("Listed", summary.listed, url(status="listed", show="", page=""), status == "listed", "%d hours or more above a threshold"|format(min_hours), "crit") }}
-  {{ tile("Near the limit", summary.near, url(status="near", show="", page=""), status == "near", "above a threshold, under %d hours"|format(min_hours), "warn") }}
-  {{ tile("Healthy", summary.healthy, url(status="healthy", show="", page=""), status == "healthy", "never above a threshold", "good") }}
-  {{ tile("New", summary.new, url(status="", show="new", page=""), show == "new" and not status, "first seen on the latest day", "new") }}
+<div class="set-stats site-stats">
+  {{ tile("All sites", summary.total, url(status="", show="", page=""), not status and show != "new", "every site ever seen", "", "tower") }}
+  {{ tile("Listed", summary.listed, url(status="listed", show="", page=""), status == "listed", "%d hours or more above a threshold"|format(min_hours), "crit", "alert") }}
+  {{ tile("Near the limit", summary.near, url(status="near", show="", page=""), status == "near", "above a threshold, under %d hours"|format(min_hours), "warn", "info") }}
+  {{ tile("Healthy", summary.healthy, url(status="healthy", show="", page=""), status == "healthy", "never above a threshold", "good", "check-circle") }}
+  {{ tile("New", summary.new, url(status="", show="new", page=""), show == "new" and not status, "first seen on the latest day", "new", "sparkle") }}
 </div>
 
-<section class="card">
-  <form class="filters" method="get" action="/sites">
-    <label class="search">{{ icon("search") }}<span class="sr">Search</span>
-      <input class="input input-sm" type="search" name="q" value="{{ q }}" placeholder="Search by site name or ID" autocomplete="off"></label>
+<section class="card site-card">
+  <div class="set-head">
+    <span class="set-icon">{{ icon("tower") }}</span>
+    <div><h2>Site list</h2><p>Click a site to see its hours, peaks and paths. {% if latest %}Status and hours are for {{ latest|d }}.{% endif %}</p></div>
+  </div>
+  <form class="filters site-filters" method="get" action="/sites">
+    <div class="fx-top">
+      <label class="search fx-search">{{ icon("search") }}<span class="sr">Search</span>
+        <input class="input input-sm" type="search" name="q" value="{{ q }}" placeholder="Search by site name or ID" autocomplete="off"></label>
+      <button class="btn btn-sm">{{ icon("search", "sm") }}<span>Search</span></button>
+      {% if filtered %}<a class="link-btn" href="/sites">Clear filters</a>{% endif %}
+      <span class="fx-count"><b>{{ result.total|num }}</b> site{{ '' if result.total == 1 else 's' }}{% if filtered %} match{% endif %}</span>
+    </div>
     {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
     {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
-    <div class="chips" role="group" aria-label="Category">
+    <div class="fx-groups">
+    <div class="fx-group"><span class="fx-label">Site category</span>
+    <div class="seg" role="group" aria-label="Category">
       <a class="chip{% if not category %} on{% endif %}" href="{{ url(category='', page='') }}">All</a>
       {% for c in CATEGORIES %}
       <a class="chip{% if category == c %} on{% endif %}" href="{{ url(category=c, page='') }}" title="{{ CATEGORY_LABELS[c] }}">{{ c }} <small>{{ summary.by_category.get(c, 0)|num }}</small></a>
       {% endfor %}
-    </div>
+    </div></div>
+    <label class="fx-group"><span class="fx-label">Source file</span>
     <select class="select select-sm" name="source" aria-label="KPI file" data-autosubmit>
-      <option value="">All KPI files</option>
+      <option value="">All 4 files</option>
       {% for k in SOURCE_ORDER %}<option value="{{ k }}"{% if source == k %} selected{% endif %}>{{ SOURCES[k].label }}</option>{% endfor %}
-    </select>
+    </select></label>
+    <label class="fx-group"><span class="fx-label">History</span>
     <select class="select select-sm" name="show" aria-label="Show" data-autosubmit>
       <option value="">Any history</option>
       <option value="new"{% if show == "new" %} selected{% endif %}>New on the latest day</option>
       <option value="flagged"{% if show == "flagged" %} selected{% endif %}>On the latest report</option>
       <option value="silent"{% if show == "silent" %} selected{% endif %}>Missing from the latest files</option>
       <option value="renamed"{% if show == "renamed" %} selected{% endif %}>Renamed at some point</option>
-    </select>
+    </select></label>
+    <label class="fx-group"><span class="fx-label">Sort</span>
     <select class="select select-sm" name="sort" aria-label="Sort" data-autosubmit>
       <option value="name">Sort by name</option>
       <option value="newest"{% if sort == "newest" %} selected{% endif %}>Newest first</option>
       <option value="pd"{% if sort == "pd" %} selected{% endif %}>Most packet drop hours</option>
       <option value="jitter"{% if sort == "jitter" %} selected{% endif %}>Most jitter hours</option>
       <option value="rtt"{% if sort == "rtt" %} selected{% endif %}>Most RTT hours</option>
-    </select>
-    <button class="btn btn-sm btn-soft">{{ icon("search", "sm") }}<span>Search</span></button>
-    {% if filtered %}<a class="small" href="/sites">Clear filters</a>{% endif %}
-    <span class="filters-end">{{ result.total|num }} site{{ '' if result.total == 1 else 's' }}</span>
+    </select></label>
+    </div>
   </form>
 
   {% if result.rows %}
@@ -140,11 +153,13 @@
     </div>
   </div>
   {% endif %}
+  <div class="site-legend">
+    <span>{{ icon("info", "sm") }} Each block is one hour of the latest day, using the site's worst path in that hour.</span>
+    <span class="strip-key"><i class="o PD"></i><i class="o JITTER"></i><i class="o RTT"></i> at or above the threshold</span>
+    <span class="strip-key"><i></i> below it</span>
+    <span class="strip-key"><i class="n"></i> no measurement</span>
+  </div>
 </section>
-<p class="small muted">Each block is one hour of the latest day, using the site's worst path in that hour.
-  <span class="strip-key"><i class="o PD"></i><i class="o JITTER"></i><i class="o RTT"></i> at or above the threshold</span>
-  <span class="strip-key"><i></i> below it</span>
-  <span class="strip-key"><i class="n"></i> no measurement</span></p>
 
 <dialog class="drawer" id="site-drawer" aria-label="Site details">
   <div class="drawer-bar">
