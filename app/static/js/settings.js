@@ -1,3 +1,40 @@
+/* Settings: one section at a time, chosen with the tabs (the address keeps it, e.g. #users) */
+(function () {
+  "use strict";
+  var tabs = Array.prototype.slice.call(document.querySelectorAll(".set-tab[data-tab]"));
+  var panels = Array.prototype.slice.call(document.querySelectorAll(".set-panel[data-panel]"));
+  if (!tabs.length || !panels.length) return;
+  var ALIAS = { "add-user": "users", "users-list": "users" };
+
+  function keyFromHash() {
+    var k = (window.location.hash || "").replace("#", "");
+    k = ALIAS[k] || k;
+    return panels.some(function (p) { return p.dataset.panel === k; }) ? k : "rules";
+  }
+  function show(key) {
+    tabs.forEach(function (t) {
+      var on = t.dataset.tab === key;
+      t.classList.toggle("on", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    panels.forEach(function (p) { p.classList.toggle("on", p.dataset.panel === key); });
+  }
+  document.body.classList.add("set-tabs-ready");
+  show(keyFromHash());
+  window.scrollTo(0, 0);       /* the browser jumped to the section before it was shown; start at the top */
+
+  document.addEventListener("click", function (ev) {
+    var link = ev.target.closest(".set-tab[data-tab], [data-tab-link]");
+    if (!link || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+    ev.preventDefault();
+    var key = link.dataset.tab || link.dataset.tabLink;
+    history.replaceState(null, "", window.location.pathname + window.location.search + "#" + key);
+    show(key);
+    if (link.dataset.tabLink) document.getElementById("set-tabs").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  window.addEventListener("hashchange", function () { show(keyFromHash()); });
+})();
+
 /* Settings: filter the list of users by name, role and status */
 (function () {
   "use strict";
