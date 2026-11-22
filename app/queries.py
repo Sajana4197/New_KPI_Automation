@@ -371,13 +371,51 @@ def storage() -> dict:
 
 # ---- admin -----------------------------------------------------------------------------
 def users() -> list[dict]:
-    return db.query("SELECT id, username, full_name, role, is_active, created_at, last_login_at "
+    return db.query("SELECT id, username, full_name, role, is_active, created_at, last_login_at, must_change_password "
                     "FROM users ORDER BY lower(username)")
 
 
 def activity(limit: int = 40) -> list[dict]:
     return db.query("SELECT at, username, action, detail FROM activity_log ORDER BY at DESC, id DESC LIMIT %s",
                     (limit,))
+
+
+ACTIVITY_PER_PAGE = 25
+
+
+def activity_page(who: str = "", action: str = "", day_from: date | None = None, day_to: date | None = None,
+                  text: str = "", page: int = 1) -> dict:
+    """One page of the activity log, newest first, narrowed by person, action, days and words."""
+    where, params = ["true"], {}
+    if who:
+        where.append("coalesce(username, 'system') = %(who)s")
+        params["who"] = who
+    if action:
+        where.append("action = %(action)s")
+        params["action"] = action
+    if day_from:
+        where.append("at >= %(day_from)s::date")
+        params["day_from"] = day_from
+    if day_to:
+        where.append("at < %(day_to)s::date + 1")
+        params["day_to"] = day_to
+    if text:
+        where.append("(detail ILIKE %(text)s OR action ILIKE %(text)s OR username ILIKE %(text)s)")
+        params["text"] = "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    sql_where = " AND ".join(where)
+    total = db.scalar(f"SELECT count(*) FROM activity_log WHERE {sql_where}", params)
+    pages = max(1, -(-total // ACTIVITY_PER_PAGE))
+    page = min(max(1, page), pages)
+    rows = db.query(f"""SELECT at, username, action, detail FROM activity_log WHERE {sql_where}
+                        ORDER BY at DESC, id DESC LIMIT %(n)s OFFSET %(off)s""",
+                    {**params, "n": ACTIVITY_PER_PAGE, "off": (page - 1) * ACTIVITY_PER_PAGE})
+    return {
+        "rows": rows, "total": total, "page": page, "pages": pages, "per_page": ACTIVITY_PER_PAGE,
+        "all": db.scalar("SELECT count(*) FROM activity_log"),
+        "people": [r["who"] for r in db.query(
+            "SELECT DISTINCT coalesce(username, 'system') AS who FROM activity_log ORDER BY 1")],
+        "actions": [r["action"] for r in db.query("SELECT DISTINCT action FROM activity_log ORDER BY 1")],
+    }
 
 
 def seeds() -> list[dict]:

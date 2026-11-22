@@ -16,6 +16,10 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 UPDATE users SET role = 'user' WHERE role NOT IN ('admin', 'user');
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'user'));
 
+-- Set when an administrator chooses someone's password (new account or reset): they must pick their own
+-- the next time they sign in.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS settings (
     key         text PRIMARY KEY,
     value       jsonb NOT NULL,

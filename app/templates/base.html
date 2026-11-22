@@ -20,7 +20,7 @@
   </div>
   {% endfor %}
 {% endset %}
-{% if user %}
+{% if user and not bare %}
 {% set nav = [("dashboard", "/", "grid", "Dashboard"), ("report", "/report", "file", "Daily report"),
               ("sites", "/sites", "tower", "Sites")] %}
 {% if can("admin") %}{% set nav = nav + [("imports", "/imports", "inbox", "Imports")] %}{% endif %}
@@ -56,7 +56,7 @@
       </a>
       <form method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ csrf }}">
-        <button class="icon-btn" title="Sign out" aria-label="Sign out">{{ icon("logout") }}</button>
+        <button class="icon-btn" type="button" data-open="logout-dialog" title="Sign out" aria-label="Sign out">{{ icon("logout") }}</button>
       </form>
     </div>
   </aside>
@@ -81,12 +81,25 @@
     {% endfor %}
   </nav>
 </div>
+<dialog class="modal" id="logout-dialog" aria-labelledby="logout-title">
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="modal-body logout-body">
+      <span class="logout-icon">{{ icon("logout") }}</span>
+      <h2 id="logout-title">Are you sure you want to sign out?</h2>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" type="button" data-close autofocus>Cancel</button>
+      <button class="btn btn-danger">{{ icon("logout") }}<span>Sign out</span></button>
+    </div>
+  </form>
+</dialog>
 {% else %}
 <main class="bare">{{ self.content() }}</main>
 {% endif %}
 <div id="toasts" aria-live="polite"></div>
 <script src="/static/js/app.js?v={{ asset_v }}"></script>
-{% if user %}<script src="/static/js/bg.js?v={{ asset_v }}"></script>{% endif %}
+<script src="/static/js/bg.js?v={{ asset_v }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -35,22 +35,98 @@
   </div>
 </section>
 
+<section class="card" id="add-user">
+  <div class="card-head"><div><h2>Add a user</h2><p>Create an account and give the person their username and password</p></div></div>
+  <div class="card-body">
+    <form method="post" action="/settings/users/add">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <div class="form-grid">
+        <label class="field"><span>Username</span>
+          <input class="input" name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{2,31}" autocomplete="off" autocapitalize="none" spellcheck="false">
+          <small>3 to 32 letters, numbers, dot, dash or underscore</small></label>
+        <label class="field"><span>Full name</span>
+          <input class="input" name="full_name" maxlength="80" autocomplete="off"></label>
+        <label class="field"><span>Role</span>
+          <select class="select" name="role">
+            {% for r in ROLES|reverse %}<option value="{{ r }}">{{ ROLE_LABELS[r] }}</option>{% endfor %}
+          </select></label>
+        <label class="field"><span>Password</span>
+          <input class="input" type="password" name="password" required minlength="{{ MIN_PASSWORD }}" maxlength="200" autocomplete="new-password">
+          <small>At least {{ MIN_PASSWORD }} characters. They will choose their own when they first sign in.</small></label>
+      </div>
+      <div class="form-foot">
+        <button class="btn" data-busy="Adding…">{{ icon("plus") }}<span>Add user</span></button>
+      </div>
+    </form>
+    <dl class="kv small" style="margin-top:18px">
+      {% for r in ROLES %}<dt>{{ ROLE_LABELS[r] }}</dt><dd style="font-weight:500">{{ ROLE_HELP[r] }}</dd>{% endfor %}
+    </dl>
+  </div>
+</section>
+
 <section class="card" id="users">
   <div class="card-head"><div><h2>Users</h2><p>{{ users|length }} account{{ '' if users|length == 1 else 's' }}</p></div></div>
+  <div class="user-filters" id="user-filters">
+    <label class="search">{{ icon("search") }}<span class="sr">Search users</span>
+      <input class="input input-sm" id="uf-q" type="search" placeholder="Search by name or username" autocomplete="off"></label>
+    <div class="fx-group">
+      <span class="fx-label" id="uf-role-label">Role</span>
+      <div class="seg" id="uf-role" role="group" aria-labelledby="uf-role-label">
+        <button class="chip on" type="button" data-role="">All</button>
+        {% for r in ROLES %}<button class="chip" type="button" data-role="{{ r }}">{{ ROLE_LABELS[r] }}</button>{% endfor %}
+      </div>
+    </div>
+    <label class="fx-group">
+      <span class="fx-label">Status</span>
+      <select class="select select-sm" id="uf-status">
+        <option value="">Any status</option>
+        <option value="active">Can sign in</option>
+        <option value="disabled">Disabled</option>
+        <option value="pending">Still to choose a password</option>
+        <option value="never">Has not signed in yet</option>
+      </select>
+    </label>
+    <span class="fx-count" id="uf-count" aria-live="polite"></span>
+  </div>
   <div class="card-body">
     <div class="list">
       {% for u in users %}
-      <div class="list-row" style="align-items:flex-start;flex-wrap:wrap">
+      <div class="list-row user-row" data-search="{{ (u.full_name ~ ' ' ~ u.username)|lower }}" data-role="{{ u.role }}"
+           data-status="{{ 'active' if u.is_active else 'disabled' }}{{ ' pending' if u.must_change_password }}{{ ' never' if not u.last_login_at }}">
         <span class="avatar" aria-hidden="true">{{ (u.full_name or u.username)[:1]|upper }}</span>
         <div class="list-main">
-          <b>{{ u.full_name or u.username }}</b>{% if u.id == user.id %} <span class="tag">you</span>{% endif %}
-          <small>{{ u.username }} · added {{ u.created_at|dt }} · {% if u.last_login_at %}last signed in {{ u.last_login_at|dt }}{% else %}has not signed in yet{% endif %}</small>
+          <b>{{ u.full_name or u.username }}</b>{% if u.id == user.id %} <span class="tag">you</span>{% endif %}{% if not u.is_active %} <span class="pill pill-warn pill-inline">{{ icon("lock") }} Disabled</span>{% endif %}
+          <small>{{ u.username }} · added {{ u.created_at|dt }} · {% if u.last_login_at %}last signed in {{ u.last_login_at|dt }}{% else %}has not signed in yet{% endif %}{% if u.must_change_password %} · <span class="pending-pw">will choose a new password at next sign-in</span>{% endif %}</small>
         </div>
-        <span class="pill {{ 'pill-info' if u.role == 'admin' else '' }}" title="{{ ROLE_HELP[u.role] }}">{{ ROLE_LABELS[u.role] }}</span>
-        {% if not u.is_active %}<span class="pill pill-warn">{{ icon("lock") }} Disabled</span>{% endif %}
-        <details class="row-edit" style="flex-basis:100%">
-          <summary><span class="btn btn-ghost btn-sm">{{ icon("edit", "sm") }}<span>Edit</span></span></summary>
-          <form class="edit-panel" method="post" action="/settings/users/{{ u.id }}">
+        <span class="pill role-pill {{ 'pill-info' if u.role == 'admin' else '' }}" title="{{ ROLE_HELP[u.role] }}">{{ ROLE_LABELS[u.role] }}</span>
+        {% if u.id == user.id %}
+        <a class="btn btn-ghost btn-sm" href="/account" title="Change your own name or password in My account">{{ icon("edit", "sm") }}<span>Edit</span></a>
+        {% else %}
+        <button class="btn btn-ghost btn-sm" type="button" data-toggle="edit-user-{{ u.id }}" aria-expanded="false"
+                aria-controls="edit-user-{{ u.id }}">{{ icon("edit", "sm") }}<span>Edit</span></button>
+        {% endif %}
+        {% if u.id != user.id %}
+        <button class="icon-btn icon-danger" type="button" data-open="del-user-{{ u.id }}" title="Delete {{ u.username }}" aria-label="Delete user {{ u.username }}">{{ icon("trash") }}</button>
+        <dialog class="modal" id="del-user-{{ u.id }}" aria-labelledby="del-user-{{ u.id }}-title">
+          <form method="post" action="/settings/users/{{ u.id }}/delete">
+            <input type="hidden" name="csrf_token" value="{{ csrf }}">
+            <div class="modal-body logout-body">
+              <span class="logout-icon">{{ icon("trash") }}</span>
+              <h2 id="del-user-{{ u.id }}-title">Delete {{ u.full_name or u.username }}?</h2>
+              <p class="soft">The account <b>{{ u.username }}</b> will be removed and can no longer sign in. This cannot be undone.
+                Reports and feedback they worked on are kept.</p>
+            </div>
+            <div class="modal-foot">
+              <button class="btn btn-ghost" type="button" data-close autofocus>Cancel</button>
+              <button class="btn btn-danger" data-busy="Deleting…">{{ icon("trash") }}<span>Delete user</span></button>
+            </div>
+          </form>
+        </dialog>
+        {% else %}
+        <span class="icon-btn-spacer" aria-hidden="true"></span>
+        {% endif %}
+        {% if u.id != user.id %}
+        <form class="edit-panel" id="edit-user-{{ u.id }}" method="post" action="/settings/users/{{ u.id }}" hidden>
             <input type="hidden" name="csrf_token" value="{{ csrf }}">
             <div class="form-grid">
               <label class="field"><span>Full name</span>
@@ -67,36 +143,12 @@
               <button class="btn btn-sm" data-busy="Saving…">{{ icon("check", "sm") }}<span>Save</span></button>
             </div>
           </form>
-        </details>
+        {% endif %}
+        
       </div>
       {% endfor %}
     </div>
-  </div>
-  <div class="card-body" style="border-top:1px solid var(--line-2)">
-    <h3 style="margin:0 0 12px">Add a user</h3>
-    <form method="post" action="/settings/users/add">
-      <input type="hidden" name="csrf_token" value="{{ csrf }}">
-      <div class="form-grid">
-        <label class="field"><span>Username</span>
-          <input class="input" name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9._\-]{2,31}" autocomplete="off" autocapitalize="none" spellcheck="false">
-          <small>3 to 32 letters, numbers, dot, dash or underscore</small></label>
-        <label class="field"><span>Full name</span>
-          <input class="input" name="full_name" maxlength="80" autocomplete="off"></label>
-        <label class="field"><span>Role</span>
-          <select class="select" name="role">
-            {% for r in ROLES|reverse %}<option value="{{ r }}">{{ ROLE_LABELS[r] }}</option>{% endfor %}
-          </select></label>
-        <label class="field"><span>Password</span>
-          <input class="input" type="password" name="password" required minlength="{{ MIN_PASSWORD }}" maxlength="200" autocomplete="new-password">
-          <small>At least {{ MIN_PASSWORD }} characters. They can change it under My account.</small></label>
-      </div>
-      <div class="form-foot">
-        <button class="btn" data-busy="Adding…">{{ icon("plus") }}<span>Add user</span></button>
-      </div>
-    </form>
-    <dl class="kv small" style="margin-top:18px">
-      {% for r in ROLES %}<dt>{{ ROLE_LABELS[r] }}</dt><dd style="font-weight:500">{{ ROLE_HELP[r] }}</dd>{% endfor %}
-    </dl>
+    <p class="soft hide" id="uf-empty">No users match these filters. <button class="link-btn" type="button" id="uf-clear">Clear filters</button></p>
   </div>
 </section>
 
@@ -162,12 +214,32 @@
 </div>
 
 <section class="card" id="activity">
-  <div class="card-head"><div><h2>Activity log</h2><p>The last {{ activity|length }} actions, newest first</p></div></div>
+  <div class="card-head"><div><h2>Activity log</h2><p>{{ act.all|num }} recorded action{{ '' if act.all == 1 else 's' }}, newest first</p></div></div>
+  <form class="user-filters act-filters" method="get" action="/settings#activity">
+    <label class="search">{{ icon("search") }}<span class="sr">Search the log</span>
+      <input class="input input-sm" name="a_q" type="search" value="{{ act_filter.a_q or '' }}" placeholder="Search the details" autocomplete="off"></label>
+    <label class="fx-group"><span class="fx-label">User</span>
+      <select class="select select-sm" name="a_user" data-autosubmit>
+        <option value="">Everyone</option>
+        {% for p in act.people %}<option value="{{ p }}"{% if p == act_filter.a_user %} selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select></label>
+    <label class="fx-group"><span class="fx-label">Action</span>
+      <select class="select select-sm" name="a_action" data-autosubmit>
+        <option value="">Every action</option>
+        {% for x in act.actions %}<option value="{{ x }}"{% if x == act_filter.a_action %} selected{% endif %}>{{ x }}</option>{% endfor %}
+      </select></label>
+    <label class="fx-group"><span class="fx-label">From</span>
+      <input class="input input-sm" type="date" name="a_from" value="{{ act_filter.a_from or '' }}" data-autosubmit></label>
+    <label class="fx-group"><span class="fx-label">To</span>
+      <input class="input input-sm" type="date" name="a_to" value="{{ act_filter.a_to or '' }}" data-autosubmit></label>
+    <button class="btn btn-sm">{{ icon("search", "sm") }}<span>Apply</span></button>
+    {% if act_filter %}<a class="link-btn" href="/settings#activity">Clear filters</a>{% endif %}
+  </form>
   <div class="table-wrap" style="margin-top:10px">
     <table class="table">
       <thead><tr><th>When</th><th>User</th><th>Action</th><th>Detail</th></tr></thead>
       <tbody>
-        {% for a in activity %}
+        {% for a in act.rows %}
         <tr>
           <td class="nowrap muted">{{ a.at|dt }}</td>
           <td class="nowrap">{{ a.username or "system" }}</td>
@@ -175,10 +247,21 @@
           <td class="wrap">{{ a.detail or "" }}</td>
         </tr>
         {% else %}
-        <tr class="empty-row"><td colspan="4">Nothing has been recorded yet.</td></tr>
+        <tr class="empty-row"><td colspan="4">{% if act_filter %}No actions match these filters.{% else %}Nothing has been recorded yet.{% endif %}</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% if act.total %}
+  <div class="pager">
+    <span>{{ ((act.page - 1) * act.per_page + 1)|num }}–{{ ((act.page - 1) * act.per_page + act.rows|length)|num }} of {{ act.total|num }}{% if act_filter %} matching{% endif %} · page {{ act.page }} of {{ act.pages }}</span>
+    <div class="pager-btns">
+      {% if act.page > 1 %}<a class="btn btn-ghost btn-sm" href="{{ act_link(act.page - 1) }}">{{ icon("chev-left") }}<span>Newer</span></a>{% endif %}
+      {% if act.page < act.pages %}<a class="btn btn-ghost btn-sm" href="{{ act_link(act.page + 1) }}"><span>Older</span>{{ icon("chev-right") }}</a>{% endif %}
+    </div>
+  </div>
+  {% endif %}
 </section>
 {% endblock %}
+
+{% block scripts %}<script src="/static/js/settings.js?v={{ asset_v }}"></script>{% endblock %}

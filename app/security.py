@@ -65,6 +65,10 @@ class NeedLogin(Exception):
     pass
 
 
+class MustChangePassword(Exception):
+    """Signed in with a password an administrator set: choose a new one before anything else."""
+
+
 class Forbidden(Exception):
     def __init__(self, message: str = "Your account is not allowed to do that."):
         self.message = message
@@ -110,12 +114,17 @@ def can(user: dict | None, role: str) -> bool:
     return bool(user) and _RANK[user["role"]] >= _RANK[role]
 
 
-def require(role: str = "user"):
-    """FastAPI dependency: a signed-in user holding at least this role."""
+def require(role: str = "user", allow_pending: bool = False):
+    """FastAPI dependency: a signed-in user holding at least this role.
+
+    Someone who still has to replace the password an administrator gave them is sent to choose
+    a new one first (allow_pending is only for that page itself)."""
     def dependency(request: Request) -> dict:
         user = current_user(request)
         if not user:
             raise NeedLogin()
+        if user.get("must_change_password") and not allow_pending:
+            raise MustChangePassword()
         if not can(user, role):
             raise Forbidden()
         return user

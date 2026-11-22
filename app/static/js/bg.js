@@ -9,19 +9,24 @@
   var still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var KPI = ["42,120,214", "235,104,52", "27,175,122"];      // packet drop, jitter, RTT
   var LINK = 170;                                             // longest link drawn, in px
+  /* The page can ask for a busier network: data-density (more sites) and data-speed (faster drift and packets). */
+  var DENSITY = Math.max(0.5, Math.min(3, +canvas.dataset.density || 1));
+  var SPEED = Math.max(0.5, Math.min(3, +canvas.dataset.speed || 1));
+  var fitParent = canvas.dataset.fit === "parent";     /* the sign-in page draws it in one panel only */
   var w = 0, h = 0, nodes = [], packets = [], rings = [], last = 0, running = false;
 
   function rand(a, b) { return a + Math.random() * (b - a); }
 
   function build() {
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    w = window.innerWidth; h = window.innerHeight;
+    var box = fitParent ? canvas.parentElement.getBoundingClientRect() : null;
+    w = box ? Math.round(box.width) : window.innerWidth; h = box ? Math.round(box.height) : window.innerHeight;
     canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    var want = Math.max(18, Math.min(90, Math.round(w * h / 17000)));
+    var want = Math.max(18, Math.min(140, Math.round(w * h / 17000 * DENSITY)));
     nodes = [];
     for (var i = 0; i < want; i++) {
-      nodes.push({ x: rand(0, w), y: rand(0, h), vx: rand(-9, 9), vy: rand(-9, 9), r: rand(1.4, 2.6), hub: Math.random() < 0.12 });
+      nodes.push({ x: rand(0, w), y: rand(0, h), vx: rand(-9, 9) * SPEED, vy: rand(-9, 9) * SPEED, r: rand(1.4, 2.6), hub: Math.random() < 0.12 });
     }
     packets = []; rings = [];
   }
@@ -38,7 +43,7 @@
   function launch() {
     var a = nodes[Math.floor(Math.random() * nodes.length)], near = neighbours(a);
     if (!near.length) return;
-    packets.push({ a: a, b: near[Math.floor(Math.random() * near.length)], t: 0, speed: rand(0.35, 0.8), hops: Math.floor(rand(1, 4)),
+    packets.push({ a: a, b: near[Math.floor(Math.random() * near.length)], t: 0, speed: rand(0.35, 0.8) * SPEED, hops: Math.floor(rand(1, 4)),
                    color: KPI[Math.floor(Math.random() * KPI.length)] });
   }
 
@@ -50,7 +55,7 @@
       if (n.x < -20) n.x = w + 20; else if (n.x > w + 20) n.x = -20;
       if (n.y < -20) n.y = h + 20; else if (n.y > h + 20) n.y = -20;
     }
-    if (packets.length < Math.max(4, nodes.length / 5) && Math.random() < dt * 5) launch();
+    if (packets.length < Math.max(4, nodes.length / 5 * SPEED) && Math.random() < dt * 5 * SPEED) launch();
     for (i = packets.length - 1; i >= 0; i--) {
       var p = packets[i];
       p.t += p.speed * dt;
@@ -125,7 +130,8 @@
   window.addEventListener("resize", function () {
     window.clearTimeout(timer);
     timer = window.setTimeout(function () {
-      if (window.innerWidth === w && window.innerHeight === h) return;
+      var box = fitParent ? canvas.parentElement.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
+      if (Math.round(box.width) === w && Math.round(box.height) === h) return;
       build(); draw();
     }, 150);
   });

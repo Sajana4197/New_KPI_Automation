@@ -188,6 +188,13 @@ def _need_login(request: Request, _: security.NeedLogin):
     return go("/login")
 
 
+@app.exception_handler(security.MustChangePassword)
+def _must_change(request: Request, _: security.MustChangePassword):
+    if _wants_json(request):
+        return JSONResponse({"error": "Choose a new password before you continue."}, status_code=403)
+    return go("/password/new")
+
+
 @app.exception_handler(security.Forbidden)
 def _forbidden(request: Request, exc: security.Forbidden):
     if _wants_json(request):
@@ -269,7 +276,36 @@ def login_submit(request: Request, username: str = Form(""), password: str = For
     security.note_success(key)
     security.sign_in(request, user)
     db.log_activity(user, "Signed in")
+    if user["must_change_password"]:
+        return go("/password/new")
     return go(_safe_next(next))
+
+
+# ---- first sign-in with a password an administrator set ----------------------------------
+@app.get("/password/new")
+def password_new_page(request: Request, user: dict = Depends(security.require(allow_pending=True))):
+    if not user["must_change_password"]:
+        return go("/")
+    return render(request, "password_new.html", bare=True)
+
+
+@app.post("/password/new", dependencies=[CSRF])
+def password_new_submit(request: Request, password: str = Form(""), confirm: str = Form(""),
+                        user: dict = Depends(security.require(allow_pending=True))):
+    if not user["must_change_password"]:
+        return go("/")
+    problem = security.password_problem(password, confirm)
+    if not problem and security.verify_password(password, user["password_hash"]):
+        problem = "Choose a password that is different from the one you were given."
+    if problem:
+        return render(request, "password_new.html", 400, bare=True, error=problem)
+    new_hash = security.hash_password(password)
+    db.execute("UPDATE users SET password_hash = %s, must_change_password = false WHERE id = %s", (new_hash, user["id"]))
+    security.refresh_session(request, new_hash)
+    request.state.user = None
+    db.log_activity(user, "Chose own password after an administrator set it")
+    flash(request, "good", "Your new password is saved. Welcome to TX KPI Monitor.")
+    return go("/")
 
 
 @app.post("/logout", dependencies=[CSRF])
@@ -659,10 +695,20 @@ def imports_delete(request: Request, date: str = Form(""), confirm: str = Form("
 
 # ---- settings (administrators) -----------------------------------------------------------
 @app.get("/settings")
-def settings_page(request: Request, user: dict = Depends(security.require("admin"))):
+def settings_page(request: Request, a_user: str = "", a_action: str = "", a_from: str = "", a_to: str = "",
+                  a_q: str = "", a_page: int = 1, user: dict = Depends(security.require("admin"))):
+    a_q = a_q.strip()[:100]
+    act = queries.activity_page(a_user, a_action, _parse_date(a_from), _parse_date(a_to), a_q, a_page)
+    act_filter = {k: v for k, v in {"a_user": a_user, "a_action": a_action, "a_from": a_from, "a_to": a_to,
+                                     "a_q": a_q}.items() if v}
+    from urllib.parse import urlencode
+
+    def act_link(page: int) -> str:
+        return "/settings?" + urlencode({**act_filter, "a_page": page}) + "#activity"
+
     return render(request, "settings.html", active="settings", thresholds=db.get_setting("thresholds"),
                   default_feedback=db.get_setting("default_feedback"), users=queries.users(),
-                  activity=queries.activity(), seeds=queries.seeds(), storage=queries.storage(),
+                  act=act, act_filter=act_filter, act_link=act_link, seeds=queries.seeds(), storage=queries.storage(),
                   first_report=db.scalar("SELECT min(report_date) FROM reports WHERE NOT is_seed"),
                   folders={"Inbox": config.inbox_dir, "Archive": config.archive_dir, "Failed": config.failed_dir,
                            "Excel reports": config.reports_dir})
@@ -754,12 +800,13 @@ def settings_user_add(request: Request, username: str = Form(""), full_name: str
         problem = security.password_problem(password)
     if problem:
         flash(request, "bad", problem)
-        return go("/settings#users")
-    db.execute("INSERT INTO users (username, full_name, password_hash, role) VALUES (%s, %s, %s, %s)",
+        return go("/settings#add-user")
+    db.execute("INSERT INTO users (username, full_name, password_hash, role, must_change_password) "
+               "VALUES (%s, %s, %s, %s, true)",
                (username, full_name.strip()[:80], security.hash_password(password), role))
     db.log_activity(user, "Added user", f"{username} ({security.ROLE_LABELS[role]})")
-    flash(request, "good", f"User '{username}' added. Give them the password you typed; they can change it "
-                           "under My account.")
+    flash(request, "good", f"User '{username}' added. Give them the password you typed; they will be asked to "
+                           "choose their own the first time they sign in.")
     return go("/settings#users")
 
 
@@ -789,12 +836,37 @@ def settings_user_update(request: Request, user_id: int, full_name: str = Form("
         changes.append("enabled" if active else "disabled")
     if password:
         new_hash = security.hash_password(password)
-        db.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user_id))
+        own = user_id == user["id"]
+        # Someone else's password set by an administrator must be replaced at their next sign-in.
+        db.execute("UPDATE users SET password_hash = %s, must_change_password = %s WHERE id = %s",
+                   (new_hash, not own, user_id))
         changes.append("password reset")
-        if user_id == user["id"]:
+        if own:
             security.refresh_session(request, new_hash)
     db.log_activity(user, "Updated user", f"{target['username']}: {', '.join(changes) or 'details'}")
-    flash(request, "good", f"User '{target['username']}' updated.")
+    if password and user_id != user["id"]:
+        flash(request, "good", f"User '{target['username']}' updated. Give them the new password; they will be "
+                               "asked to choose their own the next time they sign in.")
+    else:
+        flash(request, "good", f"User '{target['username']}' updated.")
+    return go("/settings#users")
+
+
+@app.post("/settings/users/{user_id}/delete", dependencies=[CSRF])
+def settings_user_delete(request: Request, user_id: int, user: dict = Depends(security.require("admin"))):
+    target = db.query_one("SELECT * FROM users WHERE id = %s", (user_id,))
+    if not target:
+        raise _not_found()
+    if user_id == user["id"]:
+        flash(request, "bad", "You cannot delete your own account.")
+        return go("/settings#users")
+    if target["role"] == "admin" and target["is_active"] and _active_admins(excluding=user_id) == 0:
+        flash(request, "bad", "There must always be at least one active administrator.")
+        return go("/settings#users")
+    # Reports, feedback and the activity log keep their history; their link to this account is cleared.
+    db.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    db.log_activity(user, "Deleted user", f"{target['username']} ({security.ROLE_LABELS[target['role']]})")
+    flash(request, "good", f"User '{target['username']}' was deleted.")
     return go("/settings#users")
 
 

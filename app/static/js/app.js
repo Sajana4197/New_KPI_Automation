@@ -107,6 +107,18 @@
       if (dialog && dialog.showModal) dialog.showModal();
       return;
     }
+    if (ev.target.matches && ev.target.matches("dialog.modal[open]")) { ev.target.close(); return; }   /* click outside a dialog */
+    var toggler = ev.target.closest("[data-toggle]");          /* show or hide a panel, e.g. a user's edit form */
+    if (toggler) {
+      var panel = document.getElementById(toggler.dataset.toggle);
+      if (panel) {
+        panel.hidden = !panel.hidden;
+        toggler.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
+        toggler.classList.toggle("on", !panel.hidden);
+        if (!panel.hidden) { var first = panel.querySelector("input:not([type=hidden]), select"); if (first) first.focus(); }
+      }
+      return;
+    }
     var closer = ev.target.closest("[data-close]");
     if (closer) { var dlg = closer.closest("dialog"); if (dlg) dlg.close(); }
   });

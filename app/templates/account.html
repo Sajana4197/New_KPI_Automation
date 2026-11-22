@@ -53,6 +53,6 @@
 
 <form method="post" action="/logout">
   <input type="hidden" name="csrf_token" value="{{ csrf }}">
-  <button class="btn btn-ghost">{{ icon("logout") }}<span>Sign out</span></button>
+  <button class="btn btn-ghost" type="button" data-open="logout-dialog">{{ icon("logout") }}<span>Sign out</span></button>
 </form>
 {% endblock %}
