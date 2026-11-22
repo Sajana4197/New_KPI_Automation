@@ -1339,3 +1339,71 @@ dialog.modal[open] { animation: modal-in .2s cubic-bezier(.2, .8, .2, 1); }
 .set-rule-v > span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .set-rule-v .dot { margin-left: 0; }
 .set-stat > * { min-width: 0; }
+
+/* ======================= Imports: redesigned ======================= */
+.imp-live { display: flex; align-items: center; min-height: 30px; }
+.imp-live .live { font-size: 14.5px; }
+.imp-day { font-size: 19px; }
+.imp-good { color: var(--good-text); }
+.imp-bad { color: var(--crit-text); }
+.set-head-act { flex: none; margin: 0; }
+
+/* Drop zone: a glowing orb, animated dashed frame */
+.drop.drop-fx { position: relative; gap: 10px; padding: 34px 20px 28px; border: 0; border-radius: 18px; background: rgba(255, 255, 255, .32); overflow: hidden; isolation: isolate; }
+.drop.drop-fx::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; padding: 2px;
+  background: repeating-linear-gradient(90deg, rgba(0, 86, 162, .55) 0 10px, transparent 10px 18px);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  background-size: 36px 100%; animation: drop-march 1.6s linear infinite; opacity: .55; }
+@keyframes drop-march { to { background-position: 36px 0; } }
+.drop.drop-fx:hover, .drop.drop-fx.over { background: rgba(0, 180, 235, .08); }
+.drop.drop-fx:hover::before, .drop.drop-fx.over::before { opacity: 1; background-image: repeating-linear-gradient(90deg, #00B4EB 0 10px, transparent 10px 18px); }
+.drop-orb { position: relative; display: grid; place-items: center; width: 68px; height: 68px; border-radius: 22px; color: #fff;
+  background: linear-gradient(145deg, #00B4EB, #0056A2 70%); box-shadow: 0 0 0 6px rgba(0, 180, 235, .12), 0 14px 28px -12px rgba(0, 86, 162, .9); animation: icon-float 4s ease-in-out infinite; }
+.drop-orb .icon { color: #fff !important; width: 30px; height: 30px; }
+.drop-orb i { position: absolute; inset: -12px; border-radius: 30px; border: 1px dashed rgba(0, 180, 235, .55); animation: auth-spin 18s linear infinite; }
+.drop-orb i + i { inset: -22px; border-radius: 38px; border-style: solid; border-color: rgba(80, 183, 72, .3); animation-duration: 26s; animation-direction: reverse; }
+.drop.drop-fx.over .drop-orb { transform: scale(1.06); box-shadow: 0 0 0 8px rgba(0, 180, 235, .2), 0 0 30px rgba(0, 180, 235, .6); }
+.drop.drop-fx b { margin-top: 10px; font-size: 15px; }
+.drop-files li { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 10px; background: rgba(255, 255, 255, .5); border: 1px solid var(--glass-edge, var(--line-2)); }
+
+/* Days stored: one row per day with a date tile and a four-part file meter */
+.day-list { display: flex; flex-direction: column; gap: 10px; }
+.day-row { display: grid; grid-template-columns: 86px minmax(0, 1fr) 120px 190px 40px; align-items: center; gap: 16px; padding: 12px 14px;
+  border-radius: 16px; background: rgba(255, 255, 255, .3); border: 1px solid var(--glass-edge, var(--line-2)); transition: box-shadow .2s ease, border-color .2s ease; }
+.day-row:hover { border-color: rgba(0, 180, 235, .5); box-shadow: 0 0 0 3px rgba(0, 180, 235, .08), 0 12px 24px -18px rgba(0, 86, 162, .6); }
+.day-date { display: flex; flex-direction: column; align-items: center; padding: 8px 6px; border-radius: 14px; color: #fff; text-decoration: none; line-height: 1.1;
+  background: linear-gradient(150deg, #00B4EB, #0056A2 65%, #003b78); box-shadow: 0 10px 20px -12px rgba(0, 86, 162, .9); }
+.day-date:hover { text-decoration: none; filter: brightness(1.08); }
+.day-date b { font-size: 26px; font-weight: 800; }
+.day-date span { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; opacity: .92; }
+.day-date small { font-size: 10.5px; opacity: .75; margin-top: 2px; }
+.day-files-fx { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.day-meter { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; max-width: 360px; }
+.day-meter i { height: 6px; border-radius: 99px; background: #f3d9a6; }
+.day-meter i.on { background: linear-gradient(90deg, #4cc777, #1baf7a); box-shadow: 0 0 6px rgba(27, 175, 122, .5); }
+.day-num { display: flex; flex-direction: column; text-align: right; }
+.day-num b { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.day-num span { font-size: 12px; color: var(--muted); }
+.day-report { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.day-report a.pill:hover { text-decoration: none; filter: brightness(.97); }
+.day-report small { font-size: 12px; color: var(--muted); }
+.day-act { display: flex; justify-content: flex-end; }
+
+/* Import log */
+.file-name { display: inline-flex; align-items: flex-start; gap: 7px; }
+.file-name .icon { flex: none; margin-top: 2px; color: var(--brand); }
+
+@media (max-width: 1100px) {
+  .day-row { grid-template-columns: 76px minmax(0, 1fr) 40px; }
+  .day-num, .day-report { grid-column: 2; }
+  .day-num { flex-direction: row; gap: 6px; align-items: baseline; text-align: left; }
+  .day-act { grid-column: 3; grid-row: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .drop.drop-fx::before, .drop-orb, .drop-orb i { animation: none; } }
+/* drop zone frame: faint dashed edge, with a light that travels round it */
+@property --drop-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.drop.drop-fx { border: 2px dashed rgba(0, 86, 162, .22); }
+.drop.drop-fx::before { inset: -2px; padding: 2px; opacity: 1; animation: drop-spin 4s linear infinite; background-size: auto;
+  background: conic-gradient(from var(--drop-a), transparent 0 72%, rgba(0, 180, 235, .9) 84%, rgba(80, 183, 72, .85) 92%, transparent 100%); }
+@keyframes drop-spin { to { --drop-a: 360deg; } }
+.drop.drop-fx:hover::before, .drop.drop-fx.over::before { background: conic-gradient(from var(--drop-a), transparent 0 50%, #00B4EB 75%, #50B748 90%, transparent 100%); animation-duration: 2s; }
