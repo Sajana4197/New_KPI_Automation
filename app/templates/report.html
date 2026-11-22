@@ -17,25 +17,38 @@
   <div>
     <h1>Daily report · {{ d|d }}</h1>
     <p>{% if report.is_seed %}Starting history loaded from an old Excel report on {{ report.generated_at|dt }}.
-      {% else %}{{ flagged|num }} site{{ '' if flagged == 1 else 's' }} listed out of {{ report.site_count|num }} monitored ·
-      generated {{ report.generated_at|dt }}{% if report.generated_by_label %} by {{ report.generated_by_label }}{% endif %}{% endif %}</p>
+      {% else %}The sites listed for each KPI on this day, with their pending days and feedback.{% endif %}</p>
   </div>
   <div class="page-actions">
-    {% if prev %}<a class="btn btn-ghost" href="/report/{{ prev.report_date.isoformat() }}" title="Earlier report">{{ icon("chev-left") }}<span>{{ prev.report_date|d("short") }}</span></a>{% endif %}
-    {% if next %}<a class="btn btn-ghost" href="/report/{{ next.report_date.isoformat() }}" title="Later report"><span>{{ next.report_date|d("short") }}</span>{{ icon("chev-right") }}</a>{% endif %}
+    {% if prev or next %}
+    <div class="day-switch" role="group" aria-label="Other days">
+      {% if prev %}<a href="/report/{{ prev.report_date.isoformat() }}" title="Earlier report: {{ prev.report_date|d }}" aria-label="Earlier report">{{ icon("chev-left") }}</a>{% else %}<span class="off">{{ icon("chev-left") }}</span>{% endif %}
+      <b>{{ icon("calendar", "sm") }} {{ d|d("short") }}</b>
+      {% if next %}<a href="/report/{{ next.report_date.isoformat() }}" title="Later report: {{ next.report_date|d }}" aria-label="Later report">{{ icon("chev-right") }}</a>{% else %}<span class="off">{{ icon("chev-right") }}</span>{% endif %}
+    </div>
+    {% endif %}
     {% if not report.is_seed %}
     {% if can("admin") and has_data %}
     <form method="post" action="/generate" data-confirm="Regenerate the report for {{ d|d }}? Feedback typed into this report is kept for sites that are still listed.">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <input type="hidden" name="date" value="{{ d.isoformat() }}">
-      <button class="btn btn-ghost" data-busy="Generating…">{{ icon("refresh") }}<span>Regenerate</span></button>
+      <button class="btn act-btn act-regen" data-busy="Generating…">{{ icon("refresh") }}<span>Regenerate</span></button>
     </form>
     {% endif %}
-    <a class="btn btn-ghost" href="/report/{{ d.isoformat() }}/preview">{{ icon("eye") }}<span>Preview Excel</span></a>
-    <a class="btn" href="/report/{{ d.isoformat() }}/excel">{{ icon("download") }}<span>Download Excel</span></a>
+    <a class="btn act-btn act-preview" href="/report/{{ d.isoformat() }}/preview">{{ icon("eye") }}<span>Preview Excel</span></a>
+    <a class="btn act-btn act-download" href="/report/{{ d.isoformat() }}/excel">{{ icon("download") }}<span>Download Excel</span></a>
     {% endif %}
   </div>
 </div>
+
+{% if not report.is_seed %}
+<div class="rep-chips">
+  <span class="rep-chip">{{ icon("tower", "sm") }} <b>{{ report.site_count|num }}</b> sites monitored</span>
+  <span class="rep-chip">{{ icon("alert", "sm") }} <b>{{ flagged|num }}</b> listed</span>
+  <span class="rep-chip {{ 'warn' if missing else 'good' }}">{{ icon("check-circle" if not missing else "alert", "sm") }} {{ 4 - missing|length }} of 4 files</span>
+  <span class="rep-chip">{{ icon("clock", "sm") }} generated {{ report.generated_at|dt }}{% if report.generated_by_label %} by {{ report.generated_by_label }}{% endif %}</span>
+</div>
+{% endif %}
 
 {% if missing %}
 <div class="banner banner-warn" role="status">{{ icon("alert") }}
@@ -45,17 +58,25 @@
 {% endif %}
 
 <div class="tabs-label">Choose a KPI</div>
-<div class="tabs" role="tablist" aria-label="KPI">
-  {% for k, count, rule in [
-      ("PD", report.pd_count, "Hours with packet drop at or above " ~ (thresholds.pd_pct|g) ~ " %"),
-      ("JITTER", report.jitter_count, "Hours with jitter at or above " ~ (thresholds.jitter_ms|g) ~ " ms"),
-      ("RTT", report.rtt_count, "Hours with round-trip time at or above " ~ (thresholds.rtt_ms|g) ~ " ms")] %}
-  <button class="tab" type="button" role="tab" data-kpi="{{ k }}" data-rule="{{ rule }}" aria-selected="false">
-    <i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}<b>{{ count|num }}</b></button>
+<div class="tabs kpi-tabs" role="tablist" aria-label="KPI">
+  {% for k, code, count, rule, short in [
+      ("PD", "PD", report.pd_count, "Hours with packet drop at or above " ~ (thresholds.pd_pct|g) ~ " %", "≥ " ~ (thresholds.pd_pct|g) ~ " %"),
+      ("JITTER", "JTR", report.jitter_count, "Hours with jitter at or above " ~ (thresholds.jitter_ms|g) ~ " ms", "≥ " ~ (thresholds.jitter_ms|g) ~ " ms"),
+      ("RTT", "RTT", report.rtt_count, "Hours with round-trip time at or above " ~ (thresholds.rtt_ms|g) ~ " ms", "≥ " ~ (thresholds.rtt_ms|g) ~ " ms")] %}
+  <button class="tab kpi-tab {{ k }}" type="button" role="tab" data-kpi="{{ k }}" data-rule="{{ rule }}" aria-selected="false">
+    <span class="kt-ic" aria-hidden="true">{{ code }}</span>
+    <span class="kt-k">{{ KPI_LABELS[k] }}</span>
+    <b class="kt-v">{{ count|num }}</b>
+    <small class="kt-s">sites · {{ short }} for {{ thresholds.min_hours|int }} h or more</small>
+  </button>
   {% endfor %}
 </div>
 
 <section class="card" id="report-card">
+  <div class="set-head">
+    <span class="set-icon">{{ icon("file") }}</span>
+    <div><h2>Sites on the report</h2><p>Search, filter and sort the listed sites.{% if can("admin") %} Tick sites to give them the same feedback at once.{% endif %}</p></div>
+  </div>
   <div class="filters filters-v2">
     <div class="fx-top">
       <label class="search fx-search">{{ icon("search") }}<span class="sr">Search sites</span>
@@ -129,8 +150,8 @@
       <button class="btn btn-ghost btn-sm" type="button" id="pager-next"><span>Next</span>{{ icon("chev-right") }}</button>
     </div>
   </div>
+  <p class="rep-note">{{ icon("info", "sm") }}<span id="rule-note"></span></p>
 </section>
-<p class="small muted" id="rule-note"></p>
 
 <datalist id="fb-suggestions">{% for s in suggestions %}<option value="{{ s }}"></option>{% endfor %}</datalist>
 <script type="application/json" id="page-data">{{ page_data|data_json }}</script>
