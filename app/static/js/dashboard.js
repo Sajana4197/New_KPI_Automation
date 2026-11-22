@@ -43,6 +43,21 @@
         el("th", { class: "right", text: "Jitter sites" }), el("th", { class: "right", text: "RTT sites" }))), body));
   }
 
+  /* ---- issues by site category ---- */
+  var cats = data.categories || [];
+  KPIS.forEach(function (k) {
+    TX.charts.bars(document.getElementById("cat-" + k), {
+      labels: cats.map(function (c) { return c.code; }),
+      values: cats.map(function (c) { return c[k]; }),
+      color: TX.colors[k], name: NAMES[k] + " sites",
+      title: function (i) { return cats[i].code + " · " + cats[i].label; },
+      note: function (i) {
+        var c = cats[i], pct = c.total ? c[k] / c.total * 100 : 0;
+        return TX.num(pct, 1) + " % of the " + TX.num(c.total) + " sites in this category";
+      }
+    });
+  });
+
   /* ---- listed sites, day by day (needs at least two reports) ---- */
   var trend = data.trend || { dates: [] };
   if (trend.dates.length >= 2) {

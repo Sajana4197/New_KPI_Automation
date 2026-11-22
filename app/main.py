@@ -332,7 +332,9 @@ def dashboard(request: Request, date: str | None = None, user: dict = Depends(se
                       "delta": _delta(report[col], prev[col] if prev else None), "tone": "bad-up",
                       "href": f"/report/{d.isoformat()}#{kpi}"})
     chronological = list(reversed(history))
+    categories = queries.category_summary(d, items)
     page_data = {
+        "categories": categories,
         "profile": [{"t": r["hour_ts"], "PD": r["pd"], "JITTER": r["jitter"], "RTT": r["rtt"]}
                     for r in queries.hourly_profile(d, th)],
         "trend": {"dates": [r["report_date"] for r in chronological],
@@ -343,7 +345,7 @@ def dashboard(request: Request, date: str | None = None, user: dict = Depends(se
     }
     longest = sorted((i for i in items if i["pending"] > 0), key=lambda i: (-i["pending"], -i["hours"]))[:8]
     ctx.update(stale=stale, tiles=tiles, flagged=flagged, prev=prev, history=history, longest=longest,
-               breakdown=queries.breakdowns(items), new_sites=queries.new_sites(d), page_data=page_data,
+               categories=categories, breakdown=queries.breakdowns(items), new_sites=queries.new_sites(d), page_data=page_data,
                share=(flagged / report["site_count"] * 100 if report["site_count"] else 0))
     return render(request, "dashboard.html", **ctx)
 

@@ -107,6 +107,22 @@ def breakdowns(items: list[dict]) -> dict:
     }
 
 
+def category_summary(d: date, items: list[dict]) -> list[dict]:
+    """For each site category: sites measured that day, sites on the report, and listed sites per KPI."""
+    totals = {r["category"]: r["n"] for r in db.query(
+        """SELECT s.category, count(*) AS n FROM site_daily sd JOIN sites s ON s.id = sd.site_id
+           WHERE sd.report_date = %s GROUP BY s.category""", (d,))}
+    out = []
+    for c in CATEGORIES:
+        mine = [i for i in items if i["category"] == c]
+        total = totals.get(c, 0)
+        flagged = len({i["site_id"] or i["name"] for i in mine})
+        out.append({"code": c, "label": CATEGORY_LABELS[c], "total": total, "flagged": flagged,
+                    "share": flagged / total * 100 if total else 0,
+                    **{k: sum(1 for i in mine if i["kpi"] == k) for k in KPIS}})
+    return out
+
+
 _profile_cache: dict[tuple, list[dict]] = {}
 _profile_lock = threading.Lock()
 

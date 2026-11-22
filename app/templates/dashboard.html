@@ -215,11 +215,33 @@
     </div>
 </section>
 
-<div class="grid grid-3">
-  <section class="card">
-    <div class="card-head"><div><h2>By site category</h2><p>Listed sites in each category</p></div></div>
-    <div class="card-body">{{ matrix(breakdown.category) }}</div>
-  </section>
+<section class="card" id="category-card">
+  <div class="card-head">
+    <div><h2>Issues by site category</h2>
+      <p>Sites on this report in each category. Each chart has its own scale.</p></div>
+  </div>
+  <div class="card-body">
+    <div class="cat-tiles">
+      {% for c in categories %}
+      <div class="cat-tile">
+        <div class="cat-name"><b>{{ c.code }}</b><span>{{ c.label }}</span></div>
+        <div class="cat-value">{{ c.flagged|num }}</div>
+        <div class="cat-meta">of {{ c.total|num }} sites · <b>{{ '%.1f'|format(c.share) }} %</b></div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="multiples">
+      {% for k in KPIS %}
+      <div class="multiple">
+        <div class="multiple-head"><h3><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</h3></div>
+        <div class="chart chart-cat" id="cat-{{ k }}" role="img" aria-label="{{ KPI_LABELS[k] }} sites by category: {% for c in categories %}{{ c.code }} {{ c[k] }}{{ ', ' if not loop.last }}{% endfor %}"></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<div class="grid grid-2">
   <section class="card">
     <div class="card-head"><div><h2>How long they have been pending</h2><p>Days in a row on the report</p></div></div>
     <div class="card-body">{{ matrix(breakdown.pending) }}</div>
@@ -227,7 +249,7 @@
   <section class="card">
     <div class="card-head"><div><h2>Hours above the threshold</h2><p>Out of the day's measured hours</p></div></div>
     <div class="card-body">{{ matrix(breakdown.hours) }}
-      <p class="matrix-foot">In all three cards, bars in a column are scaled to that column's largest value.</p></div>
+      <p class="matrix-foot">In both cards, bars in a column are scaled to that column's largest value.</p></div>
   </section>
 </div>
 

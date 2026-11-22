@@ -104,6 +104,44 @@
     return mount(node, option);
   }
 
+  /* Horizontal bars with the value written beside each bar.
+     opts: labels, values, color, name, title(i), note(i) */
+  function bars(node, opts) {
+    var top = Math.max.apply(null, opts.values.concat([1]));
+    return mount(node, {
+      animationDuration: 500,
+      textStyle: { fontFamily: FONT },
+      grid: { left: 4, right: 58, top: 6, bottom: 6, containLabel: true },
+      xAxis: { type: "value", min: 0, max: top, show: false },
+      yAxis: {
+        type: "category", data: opts.labels, inverse: true,
+        axisLine: { show: false }, axisTick: { show: false },
+        axisLabel: { color: ink.text2, fontSize: 12, fontWeight: 650, margin: 10 }
+      },
+      tooltip: {
+        trigger: "axis", confine: true, backgroundColor: "#ffffff", borderColor: ink.line, borderWidth: 1,
+        padding: [10, 12], textStyle: { color: ink.text },
+        extraCssText: "border-radius:12px;box-shadow:0 14px 34px -14px rgba(15,27,45,.4);",
+        axisPointer: { type: "shadow", shadowStyle: { color: "rgba(15,27,45,.04)" } },
+        formatter: function (params) {
+          var i = params[0].dataIndex;
+          return tip(opts.title ? opts.title(i) : opts.labels[i],
+            [{ name: opts.name, color: opts.color, value: TX.num(opts.values[i]) }], opts.note ? opts.note(i) : "");
+        }
+      },
+      series: [{
+        type: "bar", name: opts.name, data: opts.values, barWidth: 16,
+        itemStyle: { color: opts.color, borderRadius: [0, 4, 4, 0] },
+        showBackground: true, backgroundStyle: { color: ink.grid, borderRadius: [0, 4, 4, 0] },
+        label: {
+          show: true, position: "right", distance: 8, color: ink.text, fontSize: 13, fontWeight: 700,
+          formatter: function (p) { return TX.num(p.value); }
+        },
+        emphasis: { disabled: true }
+      }]
+    });
+  }
+
   var timer = null;
   window.addEventListener("resize", function () {
     clearTimeout(timer);
@@ -118,5 +156,5 @@
     chart.dispose();
   }
 
-  TX.charts = { line: line, dispose: dispose };
+  TX.charts = { line: line, bars: bars, dispose: dispose };
 })();
