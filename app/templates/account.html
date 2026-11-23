@@ -37,6 +37,19 @@
 <div class="grid grid-2">
   <section class="card">
     {{ section_head("user", "Profile", "How your name appears in the menu and next to the reports you generate") }}
+    {% if can("admin") %}
+    <form method="post" action="/account/profile" class="card-body acc-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <label class="field"><span>Username</span>
+        <input class="input" value="{{ user.username }}" disabled>
+        <small>Usernames cannot be changed.</small></label>
+      <label class="field"><span>Full name</span>
+        <input class="input" name="full_name" value="{{ user.full_name or '' }}" maxlength="80" autocomplete="name"></label>
+      <div class="acc-foot">
+        <button class="btn" data-busy="Saving…">{{ icon("check") }}<span>Save name</span></button>
+      </div>
+    </form>
+    {% else %}
     <div class="card-body acc-form">
       <label class="field"><span>Username</span>
         <input class="input" value="{{ user.username }}" disabled></label>
@@ -44,6 +57,7 @@
         <input class="input" value="{{ user.full_name or '—' }}" disabled></label>
       <p class="soft acc-note">{{ icon("info", "sm") }} Your name and username can only be changed by an administrator.</p>
     </div>
+    {% endif %}
   </section>
 
   <section class="card">

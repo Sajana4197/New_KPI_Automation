@@ -103,19 +103,20 @@
 
 <section class="card" id="server-card">
   {% call section_head("download", "Server", "The KPI dump files are fetched from the server into the inbox folder. The server is only read, never changed.") %}
-    {% if server.enabled %}
-    <form method="post" action="/imports/server" class="set-head-act">
-      <input type="hidden" name="csrf_token" value="{{ csrf }}">
-      <button class="btn btn-ghost btn-sm" data-busy="Checking…">{{ icon("refresh", "sm") }}<span>Check now</span></button>
-    </form>
-    {% endif %}
+    <div class="set-head-act srv-acts">
+      {% if server.enabled %}
+      <form method="post" action="/imports/server">
+        <input type="hidden" name="csrf_token" value="{{ csrf }}">
+        <button class="btn btn-ghost btn-sm" data-busy="Checking…">{{ icon("refresh", "sm") }}<span>Check now</span></button>
+      </form>
+      {% endif %}
+      <a class="btn btn-sm" href="/settings#server">{{ icon("sliders", "sm") }}<span>{{ "Change server" if server.enabled else "Set up server" }}</span></a>
+    </div>
   {% endcall %}
   <div class="card-body">
     {% if not server.enabled %}
-    <div class="set-empty">{{ icon("info", "sm") }}<span>No server is set up yet. Open the <span class="path">.env</span> file in the project folder, fill in
-      <code>KPI_SFTP_HOST</code>, <code>KPI_SFTP_USER</code>, <code>KPI_SFTP_DIR</code> and either
-      <code>KPI_SFTP_KEY_FILE</code> or <code>KPI_SFTP_PASSWORD</code>, then close and start <span class="path">run.bat</span> again.
-      The file <span class="path">.env.example</span> shows every setting.</span></div>
+    <div class="set-empty srv-empty">{{ icon("info", "sm") }}<span>No server is set up{% if server.host == "" and server.user %} (fetching is turned off){% endif %}.
+      Files can still be dropped in by hand. To fetch them automatically, choose <b>Set up server</b> (in Settings).</span></div>
     {% else %}
     <dl class="kv">
       <dt>{{ icon("database", "sm") }} Server</dt><dd><span class="path">{{ server.user }}@{{ server.host }}:{{ server.port }}</span> · login by {{ server.login }}</dd>

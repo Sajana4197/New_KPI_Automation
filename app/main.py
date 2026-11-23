@@ -675,7 +675,7 @@ def imports_server(request: Request, date_from: str = Form(""), date_to: str = F
                    user: dict = Depends(security.require("admin"))):
     """Visit the dump server now: new files only, or every file of the chosen days."""
     if not remote.enabled():
-        flash(request, "bad", "No server is set up yet. Fill in the KPI_SFTP settings in the .env file and restart.")
+        flash(request, "bad", "No server is set up yet. An administrator can set it up under Settings → Server.")
         return go("/imports")
     if date_from or date_to:
         try:
@@ -695,6 +695,62 @@ def imports_server(request: Request, date_from: str = Form(""), date_to: str = F
         remote.check_now()
         flash(request, "info", "Checking the server now. This page updates when it finishes.")
     return go("/imports")
+
+
+def _server_form(host: str, port: str, user: str, folder: str, login: str, password: str, key_file: str,
+                 key_passphrase: str, minutes: str, days: str) -> tuple[dict, str | None]:
+    """Settings entered in the 'Change server' form. A password left blank keeps the saved one."""
+    old = remote.current()
+
+    def whole(text: str, default: int) -> int:
+        try:
+            return int(str(text).strip() or default)
+        except ValueError:
+            return -1
+
+    values = {"host": host.strip(), "port": whole(port, 22), "user": user.strip(), "folder": folder.strip().rstrip("/") or folder.strip(),
+              "minutes": whole(minutes, 5), "days": whole(days, 2)}
+    if login == "key":
+        values.update(password="", key_file=key_file.strip().strip('"'),
+                      key_passphrase=key_passphrase or (old["key_passphrase"] if old["key_file"] else ""))
+    else:
+        values.update(key_file="", key_passphrase="", password=password or old["password"])
+    return values, remote.problems(values)
+
+
+@app.post("/settings/server/save", dependencies=[CSRF])
+def settings_server_save(request: Request, host: str = Form(""), port: str = Form(""), user_name: str = Form(""),
+                        folder: str = Form(""), login: str = Form("password"), password: str = Form(""),
+                        key_file: str = Form(""), key_passphrase: str = Form(""), minutes: str = Form(""),
+                        days: str = Form(""), user: dict = Depends(security.require("admin"))):
+    values, problem = _server_form(host, port, user_name, folder, login, password, key_file, key_passphrase, minutes, days)
+    if problem:
+        flash(request, "bad", f"The server was not changed. {problem}")
+        return go("/settings#server")
+    remote.save(values, user["id"])
+    db.log_activity(user, "Changed the server settings", f"{values['user']}@{values['host']}:{values['port']} {values['folder']}")
+    flash(request, "good", f"Server saved. Checking {values['host']} now. The result shows on the Imports page.")
+    return go("/settings#server")
+
+
+@app.post("/settings/server/test", dependencies=[CSRF])
+def settings_server_test(host: str = Form(""), port: str = Form(""), user_name: str = Form(""),
+                        folder: str = Form(""), login: str = Form("password"), password: str = Form(""),
+                        key_file: str = Form(""), key_passphrase: str = Form(""), minutes: str = Form(""),
+                        days: str = Form(""), user: dict = Depends(security.require("admin"))):
+    values, problem = _server_form(host, port, user_name, folder, login, password, key_file, key_passphrase, minutes, days)
+    if problem:
+        return JSONResponse({"ok": False, "message": problem})
+    ok, message = remote.test(values)
+    return JSONResponse({"ok": ok, "message": message})
+
+
+@app.post("/settings/server/off", dependencies=[CSRF])
+def settings_server_off(request: Request, user: dict = Depends(security.require("admin"))):
+    remote.turn_off(user["id"])
+    db.log_activity(user, "Turned off fetching from the server")
+    flash(request, "good", "Fetching from the server is turned off. Files can still be dropped in by hand.")
+    return go("/settings#server")
 
 
 @app.post("/imports/delete", dependencies=[CSRF])
@@ -729,6 +785,7 @@ def settings_page(request: Request, a_user: str = "", a_action: str = "", a_from
                   default_feedback=db.get_setting("default_feedback"), users=queries.users(),
                   act=act, act_filter=act_filter, act_link=act_link, seeds=queries.seeds(), storage=queries.storage(),
                   first_report=db.scalar("SELECT min(report_date) FROM reports WHERE NOT is_seed"),
+                  server=remote.status(),
                   folders={"Inbox": config.inbox_dir, "Archive": config.archive_dir, "Failed": config.failed_dir,
                            "Excel reports": config.reports_dir})
 
@@ -893,6 +950,14 @@ def settings_user_delete(request: Request, user_id: int, user: dict = Depends(se
 @app.get("/account")
 def account_page(request: Request, user: dict = Depends(security.require())):
     return render(request, "account.html", active="account")
+
+
+@app.post("/account/profile", dependencies=[CSRF])
+def account_profile(request: Request, full_name: str = Form(""), user: dict = Depends(security.require("admin"))):
+    """Only administrators may change their own name; users ask an administrator."""
+    db.execute("UPDATE users SET full_name = %s WHERE id = %s", (full_name.strip()[:80], user["id"]))
+    flash(request, "good", "Your name was updated.")
+    return go("/account")
 
 
 

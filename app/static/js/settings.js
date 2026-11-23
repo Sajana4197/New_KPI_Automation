@@ -70,3 +70,44 @@
   });
   apply();
 })();
+
+/* Settings → Server */
+(function () {
+  "use strict";
+  /* Change server: show the fields for the chosen sign-in, and try the settings before saving them. */
+  var TX = window.TX, el = TX.el;
+  var srv = document.getElementById("server-form");
+  if (srv) {
+    var panes = srv.querySelectorAll(".srv-pane"), result = document.getElementById("server-result");
+    var testBtn = document.getElementById("server-test");
+    var showLogin = function () {
+      var chosen = srv.querySelector("input[name=login]:checked").value;
+      Array.prototype.forEach.call(panes, function (p) { p.hidden = p.dataset.login !== chosen; });
+      Array.prototype.forEach.call(srv.querySelectorAll(".srv-login .chip"), function (c) {
+        c.classList.toggle("is-on", c.querySelector("input").checked);
+      });
+    };
+    srv.addEventListener("change", function (ev) { if (ev.target.name === "login") showLogin(); });
+    srv.addEventListener("input", function () { result.hidden = true; });
+    showLogin();
+    var say = function (kind, text) {
+      result.hidden = false;
+      result.className = "srv-result " + kind;
+      result.textContent = "";
+      result.appendChild(TX.icon(kind === "good" ? "check-circle" : kind === "bad" ? "x-circle" : "refresh", "sm"));
+      result.appendChild(el("span", { text: text }));
+    };
+    testBtn.addEventListener("click", function () {
+      if (!srv.reportValidity()) return;
+      var label = testBtn.querySelector("span"), was = label.textContent;
+      testBtn.disabled = true; label.textContent = "Testing…";
+      say("busy", "Connecting to the server…");
+      fetch("/settings/server/test", { method: "POST", credentials: "same-origin", body: new FormData(srv),
+                                      headers: { "Accept": "application/json" } })
+        .then(function (res) { return res.json().catch(function () { return { ok: false, message: "The test could not be run (" + res.status + ")." }; }); })
+        .then(function (data) { say(data.ok ? "good" : "bad", data.message || (data.error || "The test failed.")); })
+        .catch(function () { say("bad", "The test could not be run. Is TX KPI Monitor still running?"); })
+        .then(function () { testBtn.disabled = false; label.textContent = was; });
+    });
+  }
+})();

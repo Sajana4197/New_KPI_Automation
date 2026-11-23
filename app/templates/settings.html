@@ -49,6 +49,7 @@
 <nav class="set-tabs" id="set-tabs" role="tablist" aria-label="Settings sections">
   <a class="set-tab" role="tab" href="#rules" data-tab="rules">{{ icon("sliders", "sm") }}<span>Report rules</span></a>
   <a class="set-tab" role="tab" href="#users" data-tab="users">{{ icon("users", "sm") }}<span>Users</span><b>{{ users|length }}</b></a>
+  <a class="set-tab" role="tab" href="#server" data-tab="server">{{ icon("download", "sm") }}<span>Server</span>{% if server.error %}<b class="set-tab-bad">!</b>{% endif %}</a>
   <a class="set-tab" role="tab" href="#history" data-tab="history">{{ icon("history", "sm") }}<span>Starting history</span>{% if seeds %}<b>{{ seeds|length }}</b>{% endif %}</a>
   <a class="set-tab" role="tab" href="#system" data-tab="system">{{ icon("database", "sm") }}<span>System</span></a>
   <a class="set-tab" role="tab" href="#activity" data-tab="activity">{{ icon("clock", "sm") }}<span>Activity log</span></a>
@@ -191,6 +192,89 @@
         <p class="soft hide" id="uf-empty">No users match these filters. <button class="link-btn" type="button" id="uf-clear">Clear filters</button></p>
       </div>
     </div>
+  </div>
+</section>
+
+{# ======================= Server ======================= #}
+<section class="set-panel" id="server" data-panel="server" role="tabpanel">
+  <div class="srv-layout">
+    <div class="card">
+      {% call section_head("database", "Server", "Where the KPI dump files are fetched from over SFTP. The server is only read, never changed.") %}{% endcall %}
+      <form method="post" action="/settings/server/save" id="server-form" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="card-body srv-body">
+      <div class="srv-grid">
+        <label class="field srv-wide"><span>Server address</span>
+          <input class="input" name="host" value="{{ server.host }}" placeholder="10.0.0.5 or server name" required></label>
+        <label class="field"><span>Port</span>
+          <input class="input" name="port" type="number" min="1" max="65535" value="{{ server.port or 22 }}" required></label>
+        <label class="field srv-wide"><span>User name</span>
+          <input class="input" name="user_name" value="{{ server.user }}" autocomplete="off" required></label>
+        <label class="field srv-full"><span>Folder on the server</span>
+          <input class="input" name="folder" value="{{ server.folder }}" placeholder="/home/admin_np/ippm_dump" required>
+          <small>The full path, starting with /. Names must match exactly, including capital letters.</small></label>
+      </div>
+      <fieldset class="srv-login">
+        <legend>Sign in with</legend>
+        <div class="seg" role="radiogroup">
+          <label class="chip"><input type="radio" name="login" value="password" {% if not server.key_file %}checked{% endif %}> Password</label>
+          <label class="chip"><input type="radio" name="login" value="key" {% if server.key_file %}checked{% endif %}> Key file</label>
+        </div>
+        <div class="srv-pane" data-login="password">
+          <label class="field"><span>Password</span>
+            <span class="pw-wrap"><input class="input" name="password" type="password" autocomplete="new-password"
+              placeholder="{{ 'Saved. Leave blank to keep it' if server.has_password else '' }}">
+              <button class="pw-eye" type="button" data-pw-toggle title="Show password" aria-label="Show password">{{ icon("eye", "sm") }}</button></span></label>
+        </div>
+        <div class="srv-pane" data-login="key">
+          <label class="field"><span>Key file on this PC</span>
+            <input class="input" name="key_file" value="{{ server.key_file }}" placeholder="C:\keys\kpi_server"></label>
+          <label class="field"><span>Key passphrase <em class="muted">(if the key has one)</em></span>
+            <span class="pw-wrap"><input class="input" name="key_passphrase" type="password" autocomplete="new-password"
+              placeholder="{{ 'Saved. Leave blank to keep it' if server.has_passphrase else '' }}">
+              <button class="pw-eye" type="button" data-pw-toggle title="Show password" aria-label="Show password">{{ icon("eye", "sm") }}</button></span></label>
+        </div>
+      </fieldset>
+      <div class="srv-grid">
+        <label class="field"><span>Check every (minutes)</span>
+          <input class="input" name="minutes" type="number" min="1" max="1440" value="{{ server.minutes or 5 }}" required></label>
+        <label class="field"><span>Look back (days)</span>
+          <input class="input" name="days" type="number" min="1" max="31" value="{{ server.days or 2 }}" required></label>
+      </div>
+      <div class="srv-result" id="server-result" role="status" aria-live="polite" hidden></div>
+      {% if server.source == "env" and server.enabled %}<p class="small muted">These values come from the .env file now. Once you save here, the saved values are used instead.</p>{% endif %}
+    </div>
+    <div class="srv-foot">
+      {% if server.enabled %}<button class="btn btn-ghost srv-off" type="submit" form="server-off-form"
+        data-confirm="Stop fetching files from {{ server.host }}? The settings are kept so you can turn it on again.">{{ icon("x-circle") }}<span>Turn off</span></button>{% endif %}
+      <span class="srv-gap"></span>
+      <button class="btn btn-ghost" type="button" id="server-test">{{ icon("refresh") }}<span>Test connection</span></button>
+      <button class="btn" data-busy="Saving…">{{ icon("check") }}<span>Save</span></button>
+    </div>
+  </form>
+  <form method="post" action="/settings/server/off" id="server-off-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  </form>
+    </div>
+    <aside class="card srv-side">
+      {% call section_head("refresh", "Status", "The latest visit to the server") %}{% endcall %}
+      <div class="card-body">
+        {% if not server.enabled %}
+        <div class="set-empty">{{ icon("info", "sm") }}<span>Not set up. Files can still be dropped in by hand on the Imports page.</span></div>
+        {% else %}
+        <dl class="kv">
+          <dt>{{ icon("database", "sm") }} Server</dt><dd><span class="path">{{ server.user }}@{{ server.host }}:{{ server.port }}</span></dd>
+          <dt>{{ icon("refresh", "sm") }} Last check</dt>
+          <dd>{% if server.busy %}<span class="pill pill-info">{{ icon("refresh") }} Checking…</span>
+            {% elif server.error %}<span class="pill pill-crit">{{ icon("x-circle") }} Failed</span> <span class="muted">{{ server.last_check|dt }}</span>
+            {% elif server.last_check %}<span class="pill pill-good">{{ icon("check") }} Connected</span> <span class="muted">{{ server.last_check|dt }}</span>
+            {% else %}<span class="muted">Not checked yet</span>{% endif %}</dd>
+        </dl>
+        {% if server.error %}<p class="server-msg bad">{{ server.error }}</p>{% endif %}
+        {% endif %}
+        <a class="btn btn-ghost btn-sm srv-imp" href="/imports#server-card">{{ icon("inbox", "sm") }}<span>Open Imports</span></a>
+      </div>
+    </aside>
   </div>
 </section>
 
