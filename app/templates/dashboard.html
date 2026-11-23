@@ -73,6 +73,7 @@
 {% elif not report %}
 <section class="hero" data-watch="notify">
   <div class="hero-art"><i></i><i></i><i></i></div>
+  <div class="hero-fx" aria-hidden="true"><svg class="hero-wave" viewBox="0 0 1200 120" preserveAspectRatio="none"><defs><linearGradient id="hero-wave-c" x1="0" x2="1"><stop offset="0" stop-color="#00B4EB" stop-opacity="0"/><stop offset=".25" stop-color="#00B4EB"/><stop offset=".75" stop-color="#50B748"/><stop offset="1" stop-color="#50B748" stop-opacity="0"/></linearGradient></defs><g class="hero-wave-a"><path d="M0 70 C 100 30, 200 30, 300 70 S 500 110, 600 70 S 800 30, 900 70 S 1100 110, 1200 70 S 1400 30, 1500 70 S 1700 110, 1800 70 S 2000 30, 2100 70 S 2300 110, 2400 70"/></g><g class="hero-wave-b"><path d="M0 80 C 75 55, 150 55, 225 80 S 375 105, 450 80 S 600 55, 675 80 S 825 105, 900 80 S 1050 55, 1125 80 S 1275 105, 1350 80 S 1500 55, 1575 80 S 1725 105, 1800 80 S 1950 55, 2025 80 S 2175 105, 2250 80"/></g></svg><span class="hero-scan"></span><span class="hero-dots"><em></em><em></em><em></em><em></em><em></em><em></em><em></em><em></em><em></em><em></em></span></div>
   <div class="hero-in">
     <div>
       <div class="hero-eyebrow">{{ icon("calendar") }} {{ d|d("long") }}</div>
@@ -111,6 +112,7 @@
 {% else %}
 <section class="hero" data-watch="notify">
   <div class="hero-art"><i></i><i></i><i></i></div>
+  <div class="hero-fx" aria-hidden="true"><svg class="hero-wave" viewBox="0 0 1200 120" preserveAspectRatio="none"><defs><linearGradient id="hero-wave-c" x1="0" x2="1"><stop offset="0" stop-color="#00B4EB" stop-opacity="0"/><stop offset=".25" stop-color="#00B4EB"/><stop offset=".75" stop-color="#50B748"/><stop offset="1" stop-color="#50B748" stop-opacity="0"/></linearGradient></defs><g class="hero-wave-a"><path d="M0 70 C 100 30, 200 30, 300 70 S 500 110, 600 70 S 800 30, 900 70 S 1100 110, 1200 70 S 1400 30, 1500 70 S 1700 110, 1800 70 S 2000 30, 2100 70 S 2300 110, 2400 70"/></g><g class="hero-wave-b"><path d="M0 80 C 75 55, 150 55, 225 80 S 375 105, 450 80 S 600 55, 675 80 S 825 105, 900 80 S 1050 55, 1125 80 S 1275 105, 1350 80 S 1500 55, 1575 80 S 1725 105, 1800 80 S 1950 55, 2025 80 S 2175 105, 2250 80"/></g></svg><span class="hero-scan"></span><span class="hero-dots"><em></em><em></em><em></em><em></em><em></em><em></em><em></em><em></em><em></em><em></em></span></div>
   <div class="hero-in">
     <div>
       <div class="hero-eyebrow"><i class="hero-live"></i> Daily report · {{ d|d("long") }}</div>
@@ -131,11 +133,14 @@
     </div>
     <div class="hero-gauge" role="img" aria-label="{{ '%.1f'|format(share) }} % of the sites monitored are above threshold">
       <svg viewBox="0 0 120 120" aria-hidden="true">
-        <defs><linearGradient id="hero-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00B4EB"/><stop offset="1" stop-color="#50B748"/></linearGradient></defs>
+        <defs><linearGradient id="hero-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3fd0ff"/><stop offset=".55" stop-color="#7ee0ff"/><stop offset="1" stop-color="#6fe36a"/></linearGradient></defs>
         <circle class="g-ticks" cx="60" cy="60" r="56"/>
         <circle class="g-track" cx="60" cy="60" r="45"/>
         <circle class="g-value" cx="60" cy="60" r="45" pathLength="100" stroke-dasharray="{{ '%.1f'|format([share, 100]|min) }} 100"/>
+        <g class="g-head" style="--g-deg: {{ '%.1f'|format([share, 100]|min * 3.6) }}deg"><circle cx="105" cy="60" r="8" class="g-head-halo"/><circle cx="105" cy="60" r="4.2"/></g>
       </svg>
+      <div class="g-sweep" aria-hidden="true"></div>
+      <div class="g-orbit" aria-hidden="true"><i></i></div>
       <div class="g-text"><b>{{ '%.1f'|format(share) }}<small>%</small></b><span>of all sites</span></div>
     </div>
   </div>
