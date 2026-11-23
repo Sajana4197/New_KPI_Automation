@@ -28,7 +28,26 @@ from .seed import SeedError, load_seed
 from .sources import CATEGORIES, CATEGORY_LABELS, SOURCE_ORDER, SOURCES
 
 log = logging.getLogger("kpi.web")
-ASSET_VERSION = str(int(time.time()))
+class _AssetVersion:
+    """The ?v= added to CSS/JS links. It follows the newest file under static/css and static/js, so the
+    browser fetches a fresh copy as soon as one of them changes, without a server restart or Ctrl+F5."""
+
+    def __init__(self) -> None:
+        self._value, self._checked = str(int(time.time())), 0.0
+
+    def __str__(self) -> str:
+        now = time.monotonic()
+        if now - self._checked > 2:
+            self._checked = now
+            try:
+                newest = max(p.stat().st_mtime for d in ("css", "js") for p in (APP_DIR / "static" / d).glob("*") if p.is_file())
+                self._value = str(int(newest))
+            except (OSError, ValueError):
+                pass
+        return self._value
+
+
+ASSET_VERSION = _AssetVersion()
 KPI_UNITS = {"PD": "%", "JITTER": "ms", "RTT": "ms"}
 _generate_lock = threading.Lock()
 
@@ -875,12 +894,6 @@ def settings_user_delete(request: Request, user_id: int, user: dict = Depends(se
 def account_page(request: Request, user: dict = Depends(security.require())):
     return render(request, "account.html", active="account")
 
-
-@app.post("/account/profile", dependencies=[CSRF])
-def account_profile(request: Request, full_name: str = Form(""), user: dict = Depends(security.require())):
-    db.execute("UPDATE users SET full_name = %s WHERE id = %s", (full_name.strip()[:80], user["id"]))
-    flash(request, "good", "Your name was updated.")
-    return go("/account")
 
 
 @app.post("/account/password", dependencies=[CSRF])

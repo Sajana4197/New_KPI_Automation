@@ -171,6 +171,55 @@
     window.requestAnimationFrame(step);
   });
 
+  /* Loading effect while the next page is on its way: if it takes more than a moment, the window is
+     frosted over and a card in the middle says what is opening. Downloads (Excel) never start it. */
+  var loader = (function () {
+    var veil = el("div", { class: "page-veil", "aria-hidden": "true" });
+    var title = el("b", { text: "Loading…" });
+    var card = el("div", { class: "page-loading", role: "status", "aria-live": "polite" },
+      el("span", { class: "page-loading-ring" }, el("img", { src: "/static/img/favicon.svg", alt: "", width: 26, height: 26 })),
+      el("div", null, title, el("small", { text: "Please wait a moment" })),
+      el("span", { class: "page-loading-track" }));
+    document.body.appendChild(veil);
+    document.body.appendChild(card);
+    var timers = [], running = false, skipUntil = 0;
+    function stop() {
+      running = false;
+      timers.forEach(clearTimeout); timers = [];
+      veil.classList.remove("on"); card.classList.remove("on");
+    }
+    function start(label) {
+      if (running || Date.now() < skipUntil) return;
+      running = true;
+      title.textContent = label ? "Opening " + label + "…" : "Loading…";
+      timers.push(setTimeout(function () { veil.classList.add("on"); card.classList.add("on"); }, 200));
+      timers.push(setTimeout(stop, 20000));       /* never leave it showing if the page stays */
+    }
+    function nameOf(a) {
+      var t = (a.getAttribute("data-title") || a.getAttribute("aria-label") || a.textContent || "").replace(/\s+/g, " ").trim();
+      return t && t.length <= 30 ? t : "";
+    }
+    function isDownload(a) {
+      return a.hasAttribute("download") || /\/excel(?:$|[?#])/.test(a.getAttribute("href") || "");
+    }
+    document.addEventListener("click", function (ev) {
+      var a = ev.target.closest && ev.target.closest("a[href]");
+      if (!a || ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
+      if (isDownload(a)) { skipUntil = Date.now() + 4000; return; }
+      if ((a.target && a.target !== "_self") || a.origin !== window.location.origin) return;
+      if (a.pathname === window.location.pathname && a.search === window.location.search && a.hash) return;   /* same page, another section */
+      setTimeout(function () { if (!ev.defaultPrevented) start(nameOf(a)); }, 0);
+    });
+    document.addEventListener("submit", function (ev) {
+      var form = ev.target;
+      if (form.target && form.target !== "_self") return;
+      setTimeout(function () { if (!ev.defaultPrevented) start(); }, 0);
+    });
+    window.addEventListener("beforeunload", function () { start(); });   /* also covers pages that reload themselves */
+    window.addEventListener("pageshow", stop);                          /* coming back with the browser's Back button */
+    return { start: start, stop: stop };
+  })();
+
   /* Password boxes: an eye button shows or hides the text, and a meter rates a new password. */
   document.addEventListener("click", function (ev) {
     var eye = ev.target.closest("[data-pw-toggle]");
