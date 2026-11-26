@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS sites (
     id          serial PRIMARY KEY,
     source      text NOT NULL,
-    ext_key     text NOT NULL,          -- ZTE: managed element ID; Huawei: task name (lower case)
+    ext_key     text NOT NULL,          -- site name in lower case (Huawei: task name without _dscp_x)
     name        text NOT NULL,          -- latest name seen in the data
     category    text NOT NULL DEFAULT 'OS',
     first_seen  date NOT NULL,
@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS paths (
     label    text NOT NULL,
     UNIQUE (site_id, label)
 );
+-- Path type: BE / Priority (Huawei, from _dscp_0 / _dscp_46) or Mobitel / SLT (ZTE, from the destination IP).
+ALTER TABLE paths ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS import_files (
     id              serial PRIMARY KEY,
@@ -112,6 +114,22 @@ CREATE TABLE IF NOT EXISTS site_daily (
 );
 CREATE INDEX IF NOT EXISTS site_daily_site_idx ON site_daily (site_id, report_date);
 
+-- Per site, path type and report day: the report judges each path type of a site on its own.
+CREATE TABLE IF NOT EXISTS path_daily (
+    report_date   date NOT NULL,
+    site_id       int NOT NULL REFERENCES sites (id) ON DELETE CASCADE,
+    kind          text NOT NULL,
+    samples       smallint NOT NULL,
+    pd_hours      smallint NOT NULL,
+    jitter_hours  smallint NOT NULL,
+    rtt_hours     smallint NOT NULL,
+    pd_max        double precision,
+    rtt_max       real,
+    jitter_max    real,
+    PRIMARY KEY (report_date, site_id, kind)
+);
+CREATE INDEX IF NOT EXISTS path_daily_site_idx ON path_daily (site_id, report_date);
+
 CREATE TABLE IF NOT EXISTS reports (
     id               serial PRIMARY KEY,
     report_date      date NOT NULL UNIQUE,
@@ -141,6 +159,8 @@ CREATE TABLE IF NOT EXISTS report_items (
     feedback_edited_at  timestamptz,
     feedback_edited_by  int REFERENCES users (id) ON DELETE SET NULL
 );
+-- The path type that breached (see paths.kind); empty for rows of old reports made before path types.
+ALTER TABLE report_items ADD COLUMN IF NOT EXISTS path_kind text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS report_items_report_idx ON report_items (report_id, kpi);
 CREATE INDEX IF NOT EXISTS report_items_site_idx ON report_items (site_id);
 

@@ -32,7 +32,6 @@ def read_old_report(path: Path) -> list[dict]:
         raise SeedError("This does not look like an old IPPM report: no PD / JITTER / RTT header row was found.")
     header = [_norm(c) for c in rows[header_idx]]
     starts = sorted((header.index(k.lower()), k) for k in KPIS)
-    default_feedback = db.get_setting("default_feedback")
     items: list[dict] = []
     for n, (start, kpi) in enumerate(starts):
         end = starts[n + 1][0] if n + 1 < len(starts) else len(header)
@@ -42,6 +41,8 @@ def read_old_report(path: Path) -> list[dict]:
             return next((start + i for i, h in enumerate(block) if h.startswith(prefix)), None)
 
         c_count, c_cat, c_pend, c_fb = col("sample count"), col("category"), col("no of pending"), col("feedback")
+        if c_fb is None:   # newer sheets call the column "TXP Remark"
+            c_fb = col("txp") if col("txp") is not None else col("remark")
         seen: set[str] = set()
         for r in rows[header_idx + 1:]:
             name = str(r[start]).strip() if start < len(r) and r[start] not in (None, "") else ""
@@ -52,7 +53,7 @@ def read_old_report(path: Path) -> list[dict]:
             def cell(idx):
                 return r[idx] if idx is not None and idx < len(r) else None
 
-            feedback = str(cell(c_fb)).strip() if cell(c_fb) not in (None, "") else default_feedback
+            feedback = str(cell(c_fb)).strip() if cell(c_fb) not in (None, "") else ""
             category = str(cell(c_cat)).strip() if cell(c_cat) not in (None, "") else category_for(name)
             items.append({"kpi": kpi, "site_name": name, "category": category,
                           "sample_count": _to_int(cell(c_count)), "pending_days": _to_int(cell(c_pend)),

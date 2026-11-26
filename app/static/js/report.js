@@ -7,12 +7,12 @@
   var PER_PAGE = 50;
   var items = data.items.map(function (r) {
     return { id: r[0], kpi: r[1], siteId: r[2], name: r[3], category: r[4], hours: r[5], pending: r[6],
-             feedback: r[7], source: r[8], isNew: !!r[9], peak: r[10], edited: !!r[11] };
+             feedback: r[7], source: r[8], isNew: !!r[9], peak: r[10], edited: !!r[11], path: r[12] || "" };
   });
   var byId = {};
   items.forEach(function (i) { byId[i.id] = i; });
 
-  var state = { kpi: "PD", q: "", cat: "", source: "", pending: "", onlyNew: false,
+  var state = { kpi: "PD", q: "", cat: "", source: "", path: "", pending: "", onlyNew: false,
                 sort: "hours", dir: -1, page: 1, selected: new Set() };
   /* The address may name a KPI and a category, e.g. #PD-CBD (used by the dashboard's worst-sites panel). */
   var hashParts = (window.location.hash || "").replace("#", "").toUpperCase().split("-");
@@ -30,6 +30,8 @@
   var sortButtons = Array.prototype.slice.call(document.querySelectorAll(".th-sort"));
   var qInput = document.getElementById("f-q"), sourceSel = document.getElementById("f-source");
   var pendingSel = document.getElementById("f-pending"), newChip = document.getElementById("f-new");
+  var pathSel = document.getElementById("f-path");
+  var PATH_NAMES = { BE: "BE (dscp 0)", Priority: "Priority (dscp 46)", Mobitel: "Mobitel path", SLT: "SLT path" };
   var countText = document.getElementById("f-count"), pagerText = document.getElementById("pager-text");
   var prevBtn = document.getElementById("pager-prev"), nextBtn = document.getElementById("pager-next");
   var ruleNote = document.getElementById("rule-note");
@@ -51,7 +53,7 @@
 
   function compare(a, b) {
     var key = state.sort, x = a[key], y = b[key], out;
-    if (key === "name" || key === "category" || key === "feedback" || key === "source") {
+    if (key === "name" || key === "category" || key === "feedback" || key === "source" || key === "path") {
       out = String(x).localeCompare(String(y), "en", { sensitivity: "base", numeric: true });
     } else {
       out = (x === null ? -Infinity : x) - (y === null ? -Infinity : y);
@@ -75,6 +77,7 @@
       if (q && i.name.toLowerCase().indexOf(q) < 0) return false;
       if (state.cat && i.category !== state.cat) return false;
       if (state.source && i.source !== state.source) return false;
+      if (state.path && i.path !== state.path) return false;
       if (state.onlyNew && !i.isNew) return false;
       if (state.pending === "0" && i.pending !== 0) return false;
       if (state.pending && state.pending !== "0" && i.pending < +state.pending) return false;
@@ -85,9 +88,9 @@
     var kpiName = { PD: "Packet Drop", JITTER: "Jitter", RTT: "RTT" }[state.kpi] || "";
     countText.textContent = "";
     if (current.length === inTab.length) {
-      countText.append("Showing all ", el("b", { text: TX.num(inTab.length) }), " " + kpiName + (inTab.length === 1 ? " site" : " sites"));
+      countText.append("Showing all ", el("b", { text: TX.num(inTab.length) }), " " + kpiName + (inTab.length === 1 ? " row" : " rows"));
     } else {
-      countText.append("Showing ", el("b", { text: TX.num(current.length) }), " of " + TX.num(inTab.length) + " " + kpiName + " sites");
+      countText.append("Showing ", el("b", { text: TX.num(current.length) }), " of " + TX.num(inTab.length) + " " + kpiName + " rows");
     }
     showActive();
     render(pages, inTab.length);
@@ -101,6 +104,7 @@
     if (state.q.trim()) tags.push(["Name contains", "“" + state.q.trim() + "”", function () { qInput.value = ""; state.q = ""; }]);
     if (state.cat) tags.push(["Category", state.cat + " · " + (CAT_NAMES[state.cat] || ""), function () { state.cat = ""; }]);
     if (state.source) tags.push(["Source file", sourceSel.options[sourceSel.selectedIndex].text, function () { sourceSel.value = ""; state.source = ""; }]);
+    if (state.path) tags.push(["Path", PATH_NAMES[state.path] || state.path, function () { pathSel.value = ""; state.path = ""; }]);
     if (state.pending) tags.push(["Days on the report", pendingSel.options[pendingSel.selectedIndex].text, function () { pendingSel.value = ""; state.pending = ""; }]);
     if (state.onlyNew) tags.push(["Show", "New sites only", function () { state.onlyNew = false; syncNew(); }]);
     tagBox.textContent = "";
@@ -122,7 +126,7 @@
       t.setAttribute("aria-selected", on ? "true" : "false");
       if (on && ruleNote) {
         ruleNote.textContent = "“Hours above” counts: " + t.dataset.rule.charAt(0).toLowerCase() +
-          t.dataset.rule.slice(1) + ", taking the worst path of the site in each hour. Peak is the highest value of the day.";
+          t.dataset.rule.slice(1) + ", for each path type on its own (BE / Priority, Mobitel / SLT), taking its worst path in each hour. Peak is the highest value of that path type on the day.";
       }
     });
     sortButtons.forEach(function (b) {
@@ -166,6 +170,8 @@
       : el("span", { class: "site-link", text: i.name });
     tr.appendChild(el("td", { class: "full site", data: { label: "Site" } }, site,
       i.isNew ? " " : null, i.isNew ? el("span", { class: "pill pill-new", title: "First seen in this day's files" }, TX.icon("sparkle"), "New") : null));
+    tr.appendChild(el("td", { class: "nowrap", data: { label: "Path" } }, i.path
+      ? el("span", { class: "tag path-tag path-" + i.path.toLowerCase(), title: PATH_NAMES[i.path] || i.path, text: i.path }) : "–"));
     tr.appendChild(el("td", { data: { label: "Category" } }, el("span", { class: "tag", text: i.category })));
     var bar = el("span", { class: "bar " + i.kpi });
     bar.style.width = Math.min(100, i.hours / 24 * 100) + "%";
@@ -173,12 +179,17 @@
       el("div", { class: "hours", title: i.hours + " of the day's hours" }, el("b", { text: i.hours }), el("span", { class: "track" }, bar))));
     tr.appendChild(el("td", { class: "right num nowrap", data: { label: "Peak" }, text: peakText(i) }));
     tr.appendChild(el("td", { data: { label: "Pending" } }, pendingPill(i.pending)));
-    tr.appendChild(el("td", { class: "full wrap", data: { label: "Feedback" } }, feedbackCell(i)));
+    tr.appendChild(el("td", { class: "full wrap", data: { label: "TXP Remark" } }, feedbackCell(i)));
     return tr;
   }
 
   function feedbackCell(i) {
     var mark = i.edited ? el("span", { class: "fb-edited", title: "Edited in this report" }) : null;
+    if (!i.feedback) {
+      if (!data.canEdit) return el("span", { class: "fb fb-empty", text: "–" });
+      return el("button", { class: "fb fb-empty", type: "button", title: "Type the TXP remark for this site",
+        on: { click: function (ev) { edit(i, ev.currentTarget); } } }, TX.icon("edit"), el("span", { text: "Add remark" }));
+    }
     if (!data.canEdit) return el("span", { class: "fb" }, mark, i.feedback);
     return el("button", { class: "fb", type: "button", title: "Click to edit", on: { click: function (ev) { edit(i, ev.currentTarget); } } },
       mark, el("span", { text: i.feedback }), TX.icon("edit"));
@@ -186,13 +197,13 @@
 
   function edit(i, button) {
     var done = false;
-    var input = el("input", { class: "input input-sm fb-input", value: i.feedback, maxLength: 500, "aria-label": "Feedback for " + i.name });
+    var input = el("input", { class: "input input-sm fb-input", value: i.feedback, maxLength: 500, "aria-label": "TXP remark for " + i.name, placeholder: "Reason, or what is needed to fix it" });
     input.setAttribute("list", "fb-suggestions");
     function finish(saveIt) {
       if (done) return;
       done = true;
       var text = input.value.replace(/\s+/g, " ").trim();
-      if (!saveIt || !text || text === i.feedback) { input.replaceWith(feedbackCell(i)); return; }
+      if (!saveIt || text === (i.feedback || "")) { input.replaceWith(feedbackCell(i)); return; }
       input.disabled = true;
       save([i.id], text).then(function () { if (input.isConnected) input.replaceWith(feedbackCell(i)); },
         function () { done = false; input.disabled = false; input.focus(); });
@@ -211,11 +222,11 @@
     return TX.post("/api/feedback", { ids: ids, feedback: text }).then(function (res) {
       res.saved.forEach(function (id) { if (byId[id]) { byId[id].feedback = res.feedback; byId[id].edited = true; } });
       var known = Array.prototype.some.call(suggestions.options, function (o) { return o.value === res.feedback; });
-      if (!known) suggestions.appendChild(el("option", { value: res.feedback }));
-      TX.toast("good", res.saved.length === 1 ? "Feedback saved." : "Feedback saved for " + TX.num(res.saved.length) + " sites.");
+      if (!known && res.feedback) suggestions.appendChild(el("option", { value: res.feedback }));
+      TX.toast("good", !res.feedback ? "TXP remark cleared." : res.saved.length === 1 ? "TXP remark saved." : "TXP remark saved for " + TX.num(res.saved.length) + " sites.");
       return res;
     }, function (err) {
-      TX.toast("bad", err.message || "Could not save the feedback.");
+      TX.toast("bad", err.message || "Could not save the TXP remark.");
       throw err;
     });
   }
@@ -281,14 +292,15 @@
   });
   sourceSel.addEventListener("change", function () { state.source = sourceSel.value; reset(); });
   pendingSel.addEventListener("change", function () { state.pending = pendingSel.value; reset(); });
+  pathSel.addEventListener("change", function () { state.path = pathSel.value; reset(); });
   newChip.addEventListener("click", function () {
     state.onlyNew = !state.onlyNew;
     syncNew();
     reset();
   });
   document.getElementById("f-clear").addEventListener("click", function () {
-    qInput.value = ""; sourceSel.value = ""; pendingSel.value = "";
-    state.q = ""; state.cat = ""; state.source = ""; state.pending = ""; state.onlyNew = false;
+    qInput.value = ""; sourceSel.value = ""; pendingSel.value = ""; pathSel.value = "";
+    state.q = ""; state.cat = ""; state.source = ""; state.path = ""; state.pending = ""; state.onlyNew = false;
     syncNew();
     reset();
   });
@@ -296,7 +308,7 @@
     b.addEventListener("click", function () {
       var key = b.dataset.sort;
       if (state.sort === key) state.dir = -state.dir;
-      else { state.sort = key; state.dir = (key === "name" || key === "category" || key === "feedback" || key === "source") ? 1 : -1; }
+      else { state.sort = key; state.dir = (key === "name" || key === "category" || key === "feedback" || key === "source" || key === "path") ? 1 : -1; }
       reset();
     });
   });

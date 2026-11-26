@@ -12,11 +12,23 @@
 
   var hourly = data.hourly || [];
   var hours = hourly.map(function (r) { return TX.hourLabel(r.t); });
+  var lines = TX.pathLines(data.byKind), multi = lines.length > 1;
+  var legend = document.getElementById("hour-legend");
+  if (legend && multi) {
+    lines.forEach(function (l) {
+      var mark = TX.el("i", { class: "line-key" + (l.dash ? " dashed" : "") });
+      mark.style.borderTopColor = l.color;
+      legend.appendChild(TX.el("span", {}, mark, l.name));
+    });
+  }
   KPIS.forEach(function (k) {
     var values = hourly.map(function (r) { return r[k]; });
+    var series = multi ? lines.map(function (l) {
+      return { name: l.name, color: l.color, dash: l.dash, values: l.values[k] };
+    }) : [{ name: NAMES[k], color: TX.colors[k], values: values }];
     TX.charts.line(document.getElementById("chart-" + k), {
-      labels: hours, area: true,
-      series: [{ name: NAMES[k], color: TX.colors[k], values: values }],
+      labels: hours, area: !multi,
+      series: series,
       threshold: { value: LIMITS[k], label: "Threshold " + LIMITS[k] + " " + UNITS[k] },
       format: function (v) { return value(k, v); },
       title: function (i) { return TX.hourRange(hourly[i].t); },

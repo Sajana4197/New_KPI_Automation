@@ -1,11 +1,13 @@
 """Daily roll-up and report generation.
 
-The rules are those of the original IPPM notebook:
-  * per site and hour, take the worst value across its paths;
+The rules are those of the original IPPM notebook, judged per path type of a site
+(Huawei BE / Priority, ZTE Mobitel / SLT):
+  * per site, path type and hour, take the worst value across the paths of that type;
   * count the hours at or above the threshold (PD 0.5 %, jitter 7 ms, RTT 20 ms);
-  * list a site when 3 or more hours breach;
+  * list the site's path type when 3 or more hours breach;
   * pending days = previous report's value + 1 when the site was listed there, else 0;
-  * feedback is carried over from the previous report, else "TXOP to Check".
+  * the TXP remark (stored as feedback) is typed in by hand; it is carried over from the previous
+    report, and a site that was not listed the day before starts with no remark.
 The only change: every source is evaluated on its own data (the notebook reused the
 first ZTE file's jitter/RTT results for the other two ZTE files).
 """
@@ -52,10 +54,46 @@ def rebuild_daily(conn: psycopg.Connection, report_date: date, source: str | Non
            GROUP BY x.site_id""",
         params,
     )
+    # The same per path type (BE / Priority, Mobitel / SLT): this is what the report is built from.
+    conn.execute(
+        """DELETE FROM path_daily pd USING sites s
+           WHERE pd.site_id = s.id AND pd.report_date = %(d)s
+             AND (%(src)s::text IS NULL OR s.source = %(src)s)""",
+        params,
+    )
+    conn.execute(
+        """INSERT INTO path_daily (report_date, site_id, kind, samples, pd_hours, jitter_hours, rtt_hours,
+                                   pd_max, rtt_max, jitter_max)
+           SELECT %(d)s, x.site_id, x.kind, count(*),
+                  count(*) FILTER (WHERE x.pd >= %(pd)s),
+                  count(*) FILTER (WHERE x.jit >= %(jit)s),
+                  count(*) FILTER (WHERE x.rtt >= %(rtt)s),
+                  max(x.pd), max(x.rtt), max(x.jit)
+           FROM (SELECT p.site_id, p.kind, h.hour_ts, max(h.pd_pct) AS pd, max(h.jitter_ms) AS jit,
+                        max(h.rtt_ms) AS rtt
+                 FROM kpi_hourly h
+                 JOIN paths p ON p.id = h.path_id
+                 JOIN sites s ON s.id = p.site_id
+                 WHERE h.report_date = %(d)s AND (%(src)s::text IS NULL OR s.source = %(src)s)
+                 GROUP BY p.site_id, p.kind, h.hour_ts) x
+           GROUP BY x.site_id, x.kind""",
+        params,
+    )
 
 
 def resolve_seed_items(conn: psycopg.Connection, report_id: int) -> None:
     """Link items loaded from an old Excel report (name only) to sites in the database."""
+    # Old reports list Huawei tasks with their _dscp_0 / _dscp_46 ending; the site is the name without it.
+    conn.execute(
+        """UPDATE report_items ri SET site_id = s.id,
+                  path_kind = CASE WHEN substring(ri.site_name from '(?i)dscp[_ -]?(\\d+)\\s*$') = '0' THEN 'BE'
+                                   ELSE 'Priority' END
+           FROM sites s
+           WHERE ri.report_id = %s AND ri.site_id IS NULL AND s.source = 'huawei_ippm'
+             AND ri.site_name ~* 'dscp[_ -]?\\d+\\s*$'
+             AND s.ext_key = lower(btrim(regexp_replace(ri.site_name, '[_ -]*dscp[_ -]?\\d+\\s*$', '', 'i')))""",
+        (report_id,),
+    )
     conn.execute(
         """UPDATE report_items ri SET site_id = s.id
            FROM sites s
@@ -71,10 +109,10 @@ def resolve_seed_items(conn: psycopg.Connection, report_id: int) -> None:
     # Renamed ZTE sites: match on the ID in brackets when exactly one ZTE site carries it.
     conn.execute(
         """UPDATE report_items ri SET site_id = m.site_id
-           FROM (SELECT ext_key, min(id) AS site_id FROM sites
-                 WHERE source LIKE 'zte%%' GROUP BY ext_key HAVING count(*) = 1) m
+           FROM (SELECT substring(name from '\\((\\d+)\\)\\s*$') AS ne_id, min(id) AS site_id FROM sites
+                 WHERE source LIKE 'zte%%' AND name ~ '\\(\\d+\\)\\s*$' GROUP BY 1 HAVING count(*) = 1) m
            WHERE ri.report_id = %s AND ri.site_id IS NULL
-             AND m.ext_key = substring(ri.site_name from '\\((\\d+)\\)\\s*$')""",
+             AND m.ne_id = substring(ri.site_name from '\\((\\d+)\\)\\s*$')""",
         (report_id,),
     )
 
@@ -89,7 +127,6 @@ def generate_report(report_date: date, user: dict | None = None) -> dict:
     """Build (or rebuild) the report for one date. Returns the reports row."""
     with db.tx() as conn:
         th = db.get_setting("thresholds", conn)
-        default_feedback = db.get_setting("default_feedback", conn)
         min_hours = int(th["min_hours"])
         rebuild_daily(conn, report_date)
 
@@ -101,35 +138,40 @@ def generate_report(report_date: date, user: dict | None = None) -> dict:
         present = [k for k in SOURCE_ORDER if k in present]
         missing = [k for k in SOURCE_ORDER if k not in present]
 
+        # Each path type of a site (BE / Priority, Mobitel / SLT) is judged on its own.
         flagged = conn.execute(
-            """SELECT sd.site_id, s.name, sd.pd_hours, sd.jitter_hours, sd.rtt_hours
-               FROM site_daily sd JOIN sites s ON s.id = sd.site_id
-               WHERE sd.report_date = %(d)s
-                 AND (sd.pd_hours >= %(m)s OR sd.jitter_hours >= %(m)s OR sd.rtt_hours >= %(m)s)""",
+            """SELECT pd.site_id, pd.kind, s.name, pd.pd_hours, pd.jitter_hours, pd.rtt_hours
+               FROM path_daily pd JOIN sites s ON s.id = pd.site_id
+               WHERE pd.report_date = %(d)s
+                 AND (pd.pd_hours >= %(m)s OR pd.jitter_hours >= %(m)s OR pd.rtt_hours >= %(m)s)""",
             {"d": report_date, "m": min_hours}).fetchall()
 
-        # Previous report: carries pending days and feedback forward.
+        # Previous report: carries pending days and feedback forward. Rows of reports made before path
+        # types existed (path_kind '') stand for every path type of their site.
         prev = conn.execute(
             "SELECT id FROM reports WHERE report_date < %s ORDER BY report_date DESC LIMIT 1",
             (report_date,)).fetchone()
-        prev_by_site: dict[tuple[str, int], dict] = {}
+        prev_by_site: dict[tuple[str, int, str], dict] = {}
         if prev:
             resolve_seed_items(conn, prev["id"])
             for r in conn.execute(
-                    "SELECT kpi, site_id, pending_days, feedback FROM report_items "
+                    "SELECT kpi, site_id, path_kind, pending_days, feedback FROM report_items "
                     "WHERE report_id = %s AND site_id IS NOT NULL", (prev["id"],)):
-                prev_by_site[(r["kpi"], r["site_id"])] = r
+                prev_by_site[(r["kpi"], r["site_id"], r["path_kind"])] = r
 
         # Feedback typed into this date's report survives a regenerate.
-        edited: dict[tuple[str, int], dict] = {}
+        edited: dict[tuple[str, int, str], dict] = {}
         old = conn.execute("SELECT id FROM reports WHERE report_date = %s", (report_date,)).fetchone()
         if old:
             for r in conn.execute(
-                    """SELECT kpi, site_id, feedback, feedback_edited_at, feedback_edited_by
+                    """SELECT kpi, site_id, path_kind, feedback, feedback_edited_at, feedback_edited_by
                        FROM report_items WHERE report_id = %s AND feedback_edited_at IS NOT NULL
                          AND site_id IS NOT NULL""", (old["id"],)):
-                edited[(r["kpi"], r["site_id"])] = r
+                edited[(r["kpi"], r["site_id"], r["path_kind"])] = r
             conn.execute("DELETE FROM reports WHERE id = %s", (old["id"],))
+
+        def find(store: dict, kpi: str, site_id: int, kind: str):
+            return store.get((kpi, site_id, kind)) or store.get((kpi, site_id, ""))
 
         items = []
         for row in flagged:
@@ -137,18 +179,17 @@ def generate_report(report_date: date, user: dict | None = None) -> dict:
                 count = row[KPI_HOURS_COL[kpi]]
                 if count < min_hours:
                     continue
-                key = (kpi, row["site_id"])
-                before = prev_by_site.get(key)
-                mine = edited.get(key)
+                before = find(prev_by_site, kpi, row["site_id"], row["kind"])
+                mine = find(edited, kpi, row["site_id"], row["kind"])
                 items.append({
-                    "kpi": kpi, "site_id": row["site_id"], "site_name": row["name"],
+                    "kpi": kpi, "site_id": row["site_id"], "site_name": row["name"], "path_kind": row["kind"],
                     "category": category_for(row["name"]), "sample_count": count,
                     "pending_days": before["pending_days"] + 1 if before else 0,
-                    "feedback": mine["feedback"] if mine else (before["feedback"] if before else default_feedback),
+                    "feedback": mine["feedback"] if mine else (before["feedback"] if before else ""),
                     "edited_at": mine["feedback_edited_at"] if mine else None,
                     "edited_by": mine["feedback_edited_by"] if mine else None,
                 })
-        items.sort(key=lambda i: (-i["sample_count"], i["site_name"].lower()))
+        items.sort(key=lambda i: (-i["sample_count"], i["site_name"].lower(), i["path_kind"]))
         counts = {k: sum(1 for i in items if i["kpi"] == k) for k in KPIS}
 
         site_count = conn.execute(
@@ -166,11 +207,12 @@ def generate_report(report_date: date, user: dict | None = None) -> dict:
         if items:
             with conn.cursor() as cur:
                 cur.executemany(
-                    """INSERT INTO report_items (report_id, kpi, site_id, site_name, category, sample_count,
+                    """INSERT INTO report_items (report_id, kpi, site_id, site_name, path_kind, category, sample_count,
                                                  pending_days, feedback, feedback_edited_at, feedback_edited_by)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                    [(report["id"], i["kpi"], i["site_id"], i["site_name"], i["category"], i["sample_count"],
-                      i["pending_days"], i["feedback"], i["edited_at"], i["edited_by"]) for i in items])
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    [(report["id"], i["kpi"], i["site_id"], i["site_name"], i["path_kind"], i["category"],
+                      i["sample_count"], i["pending_days"], i["feedback"], i["edited_at"], i["edited_by"])
+                     for i in items])
         return report
 
 
@@ -179,6 +221,7 @@ def delete_date(report_date: date) -> dict:
     with db.tx() as conn:
         hourly = conn.execute("DELETE FROM kpi_hourly WHERE report_date = %s", (report_date,)).rowcount
         conn.execute("DELETE FROM site_daily WHERE report_date = %s", (report_date,))
+        conn.execute("DELETE FROM path_daily WHERE report_date = %s", (report_date,))
         conn.execute("DELETE FROM reports WHERE report_date = %s", (report_date,))
         conn.execute("DELETE FROM import_files WHERE report_date = %s", (report_date,))
         sites = conn.execute(

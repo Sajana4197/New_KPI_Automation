@@ -21,14 +21,14 @@
       var block = ev.target.closest(".strip > i");
       if (!block) { hideTip(); return; }
       var strip = block.parentNode, row = strip.closest(".site-row");
-      var k = strip.dataset.k, i = Array.prototype.indexOf.call(strip.children, block);
-      var site = (data.sites || {})[row.dataset.site];
+      var k = strip.dataset.k, kind = strip.dataset.kind, i = Array.prototype.indexOf.call(strip.children, block);
+      var site = ((data.sites || {})[row.dataset.site] || {})[kind];
       var v = site ? site[k][i] : null, limit = +data.limits[k];
       var state = v === null || v === undefined ? "No measurement in this hour"
         : v >= limit ? "At or above the threshold of " + limit + " " + UNITS[k] : "Below the threshold of " + limit + " " + UNITS[k];
       var dot = el("i", { class: "dot " + k });
       tip.replaceChildren(el("div", { class: "tip" },
-        el("div", { class: "tip-title", text: TX.hourRange(data.hours[i]) }),
+        el("div", { class: "tip-title", text: TX.hourRange(data.hours[i]) + (kind ? " · " + kind + " path" : "") }),
         el("div", { class: "tip-row" }, el("span", {}, dot, NAMES[k]), el("b", { text: value(k, v) })),
         el("div", { class: "tip-note", text: state })));
       tip.classList.remove("hide");
@@ -84,6 +84,7 @@
         el("span", { class: "tag", text: d.category + (d.category_label ? " · " + d.category_label : "") }),
         el("span", { class: "tag", text: d.source }),
         d.ext_id ? el("span", { class: "tag", text: "ID " + d.ext_id }) : null,
+        (d.kinds || []).length ? el("span", { class: "tag", text: d.kinds.join(" + ") + " paths" }) : null,
         d.name_count > 1 ? el("span", { class: "tag", text: "renamed" }) : null),
       el("p", { class: "small muted", text: d.date
         ? "Showing " + TX.dayDate(d.date) + " · first seen " + TX.shortDate(d.first_seen) + " · last seen " + TX.shortDate(d.last_seen)
@@ -97,30 +98,66 @@
 
     var stats = el("div", { class: "drawer-stats" });
     KPIS.forEach(function (k) {
-      var s = d.daily[k], listed = s.hours >= d.min_hours;
+      var s = d.daily[k], listed = s.hours >= d.min_hours, kinds = d.kind_rows || [];
+      var mini = kinds.length ? el("div", { class: "kind-mini" }) : null;
+      kinds.forEach(function (r) {
+        var h = r[k].hours;
+        mini.appendChild(el("span", { class: h >= d.min_hours ? "is-listed" : "", title: r.kind + " path: peak " + value(k, r[k].peak) },
+          el("span", { class: "tag path-tag path-" + r.kind.toLowerCase(), text: r.kind }), el("b", { text: h + " h" })));
+      });
       stats.appendChild(el("div", { class: "drawer-stat" + (listed ? " is-listed" : "") },
         el("span", { class: "tile-label" }, el("i", { class: "dot " + k }), NAMES[k]),
-        el("b", { text: String(s.hours) }),
-        el("small", { text: (s.hours === 1 ? "hour" : "hours") + " at or above " + d.limits[k] + " " + UNITS[k] }),
+        mini || el("b", { text: String(s.hours) }),
+        el("small", { text: (mini ? "hours" : (s.hours === 1 ? "hour" : "hours")) + " at or above " + d.limits[k] + " " + UNITS[k] }),
         el("small", { class: "muted", text: "peak " + value(k, s.peak) })));
     });
     body.appendChild(stats);
     body.appendChild(el("p", { class: "small muted", text: hoursText(d.daily.samples) + " measured on " + d.daily.paths +
-      (d.daily.paths === 1 ? " path" : " paths") + ". A site is listed at " + hoursText(d.min_hours) + " or more." }));
+      (d.daily.paths === 1 ? " path" : " paths") + ". Each path type is listed at " + hoursText(d.min_hours) + " or more." }));
+
+    if ((d.kind_rows || []).length) {
+      var kbox = section("Path types", "Each path type is checked on its own. Hours at or above the threshold, and the peak.");
+      var kt = el("table", { class: "table drawer-table" },
+        el("thead", {}, el("tr", {}, el("th", { text: "Path type" }),
+          el("th", { class: "right", text: "Packet drop" }), el("th", { class: "right", text: "Jitter" }), el("th", { class: "right", text: "RTT" }))));
+      var kb = el("tbody");
+      d.kind_rows.forEach(function (r) {
+        var tr = el("tr", {}, el("td", {}, el("span", { class: "tag path-tag path-" + r.kind.toLowerCase(), text: r.kind })));
+        KPIS.forEach(function (k) {
+          var h = r[k].hours, over = h >= d.min_hours;
+          tr.appendChild(el("td", { class: "right num nowrap" + (over ? " over" : "") },
+            el("b", { text: hoursText(h) }), el("br"), el("small", { class: "muted", text: value(k, r[k].peak) })));
+        });
+        kb.appendChild(tr);
+      });
+      kt.appendChild(kb);
+      kbox.appendChild(el("div", { class: "table-wrap" }, kt));
+      body.appendChild(kbox);
+    }
 
     if (d.listed.length) {
       var box = section("On the report", "");
       d.listed.forEach(function (r) {
         box.appendChild(el("div", { class: "list-row" },
           el("div", { class: "list-main" },
-            el("b", { class: "kpi-name" }, el("i", { class: "dot " + r.kpi }), NAMES[r.kpi]),
-            el("small", { text: hoursText(r.hours) + " above threshold · feedback: " + r.feedback })),
+            el("b", { class: "kpi-name" }, el("i", { class: "dot " + r.kpi }), NAMES[r.kpi] + (r.path ? " · " + r.path + " path" : "")),
+            el("small", { text: hoursText(r.hours) + " above threshold" + (r.feedback ? " · TXP remark: " + r.feedback : "") })),
           pendingPill(r.pending)));
       });
       body.appendChild(box);
     }
 
-    var chartsBox = section("Hour by hour", "The worst path in each hour. The dashed line is the threshold. Each chart has its own scale.");
+    var lines = TX.pathLines(d.by_kind), multi = lines.length > 1;
+    var chartsBox = section("Hour by hour", "");
+    if (multi) {
+      var key = el("div", { class: "legend path-legend" });
+      lines.forEach(function (l) {
+        var mark = el("i", { class: "line-key" + (l.dash ? " dashed" : "") });
+        mark.style.borderTopColor = l.color;
+        key.appendChild(el("span", {}, mark, l.name));
+      });
+      chartsBox.appendChild(key);
+    }
     var labels = d.hourly.map(function (r) { return TX.hourLabel(r.t); });
     var mounts = [];
     KPIS.forEach(function (k) {
@@ -137,11 +174,12 @@
         ? "The " + d.paths.length + " worst of " + d.path_total + " paths. Peak value of each on this day."
         : "Peak value of each path on this day.");
       var table = el("table", { class: "table drawer-table" },
-        el("thead", {}, el("tr", {}, el("th", { text: "Path" }),
+        el("thead", {}, el("tr", {}, el("th", { text: "Path" }), el("th", { text: "Type" }),
           el("th", { class: "right", text: "Packet drop" }), el("th", { class: "right", text: "Jitter" }), el("th", { class: "right", text: "RTT" }))));
       var tb = el("tbody");
       d.paths.forEach(function (p) {
-        var tr = el("tr", {}, el("td", { class: "wrap mono", text: p.label }));
+        var tr = el("tr", {}, el("td", { class: "wrap mono", text: p.label }),
+          el("td", {}, p.kind ? el("span", { class: "tag path-tag path-" + p.kind.toLowerCase(), text: p.kind }) : null));
         KPIS.forEach(function (k) {
           var over = p[k] !== null && p[k] !== undefined && p[k] >= d.limits[k];
           tr.appendChild(el("td", { class: "right num nowrap" + (over ? " over" : ""), text: value(k, p[k]) }));
@@ -156,9 +194,12 @@
     /* charts need their boxes on screen before they can size themselves */
     mounts.forEach(function (m) {
       var k = m[0], values = d.hourly.map(function (r) { return r[k]; }), limit = +d.limits[k];
+      var series = multi ? lines.map(function (l) {
+        return { name: l.name, color: l.color, dash: l.dash, values: l.values[k] };
+      }) : [{ name: NAMES[k], color: TX.colors[k], values: values }];
       var chart = TX.charts.line(m[1], {
-        labels: labels, area: true,
-        series: [{ name: NAMES[k], color: TX.colors[k], values: values }],
+        labels: labels, area: !multi,
+        series: series,
         threshold: { value: limit, label: "Threshold " + limit + " " + UNITS[k] },
         format: function (v) { return value(k, v); },
         title: function (i) { return TX.hourRange(d.hourly[i].t); },

@@ -95,7 +95,30 @@
     csrf: csrf, icon: icon, el: el, toast: toast, post: post, pageData: pageData, num: num,
     shortDate: shortDate, dayDate: dayDate, hourLabel: hourLabel, hourRange: hourRange,
     colors: { PD: "#2a78d6", JITTER: "#eb6834", RTT: "#1baf7a" },
+    pathColors: { BE: "#7a8aa0", Priority: "#0a7fd0", Mobitel: "#2f9e2a", SLT: "#e09a00" },
+    pathColors2: { BE: "#4f5d70", Priority: "#075a94", Mobitel: "#1c6b18", SLT: "#a86d00" },
     ink: { text: "#0f1b2d", text2: "#4a5a70", muted: "#66758a", line: "#e3e8f0", grid: "#eef2f7", surface: "#ffffff" }
+  };
+
+  /* One chart line per path. The first path of a type uses the type colour; any further path gets its
+     own colour from a fixed list so the lines can be told apart. */
+  window.TX.pathLines = function (byKind) {
+    var seen = {}, extra = 0;
+    /* colours for a 2nd, 3rd… path of a type that already has a line; none of them is close to a type colour */
+    var EXTRA = ["#7c4dff", "#c2185b", "#00897b", "#8d6e63", "#283593", "#9e9d24"];
+    if (byKind && !byKind.paths && byKind.kinds) {   /* older server: one line per path type */
+      return byKind.kinds.map(function (kind) {
+        return { name: kind + " path", kind: kind, values: byKind.values[kind], dash: false,
+                 color: window.TX.pathColors[kind] || "#7a8aa0" };
+      });
+    }
+    return ((byKind && byKind.paths) || []).map(function (p) {
+      var n = seen[p.kind] = (seen[p.kind] || 0) + 1;
+      var ends = p.label.split(" > ");
+      var name = ends.length === 2 ? (p.kind ? p.kind + " · " : "") + ends[0] + " → " + ends[1] : p.label;
+      var color = n > 1 ? EXTRA[extra++ % EXTRA.length] : (window.TX.pathColors[p.kind] || "#7a8aa0");
+      return { name: name, kind: p.kind, values: p.values, dash: false, color: color };
+    });
   };
 
   document.addEventListener("click", function (ev) {

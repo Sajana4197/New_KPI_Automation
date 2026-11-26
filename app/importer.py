@@ -41,7 +41,7 @@ def _move(path: Path, folder: Path) -> Path:
     return target
 
 
-def _store(parsed: ParsedFile, filename: str, sha: str, size: int) -> dict:
+def _store(parsed: ParsedFile, filename: str, sha: str, size: int, replace_id: int | None = None) -> dict:
     df = parsed.data
     d = parsed.report_date
     src = parsed.source
@@ -85,11 +85,12 @@ def _store(parsed: ParsedFile, filename: str, sha: str, size: int) -> dict:
 
         # ---- paths -------------------------------------------------------------------
         df = df.assign(site_id=df["ext_key"].map({k: v["id"] for k, v in existing.items()}).astype("int64"))
-        pairs = df[["site_id", "path"]].drop_duplicates()
+        pairs = df[["site_id", "path", "kind"]].drop_duplicates(["site_id", "path"])
         conn.execute(
-            """INSERT INTO paths (site_id, label)
-               SELECT * FROM unnest(%s::int[], %s::text[]) ON CONFLICT (site_id, label) DO NOTHING""",
-            (pairs["site_id"].tolist(), pairs["path"].tolist()))
+            """INSERT INTO paths (site_id, label, kind)
+               SELECT * FROM unnest(%s::int[], %s::text[], %s::text[])
+               ON CONFLICT (site_id, label) DO UPDATE SET kind = EXCLUDED.kind""",
+            (pairs["site_id"].tolist(), pairs["path"].tolist(), pairs["kind"].astype(str).tolist()))
         path_rows = conn.execute("SELECT id, site_id, label FROM paths WHERE site_id = ANY(%s)", (site_ids,)).fetchall()
         path_map = pd.DataFrame(path_rows).rename(columns={"id": "path_id", "label": "path"})
         df = df.merge(path_map, on=["site_id", "path"], how="left", validate="many_to_one")
@@ -114,6 +115,15 @@ def _store(parsed: ParsedFile, filename: str, sha: str, size: int) -> dict:
                 copy.write(buf.getvalue())
 
         rebuild_daily(conn, d, src)
+
+        if replace_id:                   # rebuilding from the archive: refresh the existing log row
+            return conn.execute(
+                """UPDATE import_files SET row_count = %s, site_count = %s, new_site_count = %s, renamed_count = %s,
+                                           is_initial = %s, hour_min = %s, hour_max = %s, message = %s
+                   WHERE id = %s RETURNING *""",
+                (parsed.raw_rows, len(names), len(new_keys), len(renamed), is_initial,
+                 df["hour_ts"].min().to_pydatetime(), df["hour_ts"].max().to_pydatetime(),
+                 " ".join(parsed.warnings) or None, replace_id)).fetchone()
 
         conn.execute(
             "UPDATE import_files SET status = 'replaced' WHERE report_date = %s AND source = %s AND status = 'ok'",
@@ -167,3 +177,34 @@ def import_file(path: Path, move: bool = True) -> dict:
                 """INSERT INTO import_files (filename, sha256, size_bytes, status, message, stored_path)
                    VALUES (%s, %s, %s, 'failed', %s, %s) RETURNING *""",
                 (path.name, sha, size, message[:1000], stored))
+
+
+def rebuild_from_archive(progress=print) -> dict:
+    """Clear every site and its KPI data, then load the archived files again with the current rules.
+
+    Used when the way sites or paths are recognised changes. The import log, user accounts, settings
+    and the archived files themselves are kept; reports are regenerated afterwards by the caller.
+    """
+    with _import_lock:
+        files = db.query(
+            """SELECT id, report_date, source, filename, sha256, size_bytes, stored_path FROM import_files
+               WHERE status = 'ok' AND report_date IS NOT NULL ORDER BY report_date, source""")
+        usable = [f for f in files if f["stored_path"] and Path(f["stored_path"]).exists()]
+        lost = [f["filename"] for f in files if f not in usable]
+        if lost:
+            raise RuntimeError("These archived files are missing, so the data cannot be rebuilt: " + ", ".join(lost))
+        with db.tx() as conn:
+            conn.execute("TRUNCATE kpi_hourly, site_daily, path_daily, site_names, paths")
+            conn.execute("UPDATE report_items SET site_id = NULL WHERE site_id IS NOT NULL")
+            conn.execute("DELETE FROM sites")
+        order = {k: n for n, k in enumerate(SOURCES)}
+        usable.sort(key=lambda f: (f["report_date"], order.get(f["source"], 9)))
+        done = []
+        for f in usable:
+            started = time.perf_counter()
+            parsed = parse_file(Path(f["stored_path"]))
+            row = _store(parsed, f["filename"], f["sha256"], f["size_bytes"], replace_id=f["id"])
+            progress(f"{f['report_date']} {SOURCES[parsed.source].label}: {row['site_count']:,} sites "
+                     f"({time.perf_counter() - started:.1f}s)")
+            done.append(row)
+        return {"files": len(done), "sites": db.scalar("SELECT count(*) FROM sites")}

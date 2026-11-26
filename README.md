@@ -26,17 +26,31 @@ file. When the file arrives later, import it and press **Regenerate**. Feedback 
 
 ## The rules of the report
 
-| KPI | A site's hour counts when its worst path is at or above |
+A site is one name in the KPI file. Each site has one or two path types, and each path type is checked
+on its own:
+
+| File | Path types |
+|---|---|
+| Huawei IPPM | **BE** (task name ends in `_dscp_0`) and **Priority** (`_dscp_46`). The site name is the task name without that ending. |
+| ZTE (all three files) | **SLT** (destination IP 60.x.x.x to 69.x.x.x) and **Mobitel** (any other destination IP) |
+
+The same ID under two different names counts as two sites.
+
+| KPI | An hour counts when the worst path of that path type is at or above |
 |---|---|
 | Packet drop | 0.5 % |
 | Jitter | 7 ms |
 | RTT | 20 ms |
 
-A site is listed for a KPI when 3 or more hours of the day count. Pending days are the previous
-report's pending days plus one, or 0 if the site was not on the previous report. Feedback is carried
-from the previous report. A site on its first day gets "TXOP to Check".
+A path type is listed for a KPI when 3 or more hours of the day count. If both path types of a site
+are listed, the report has a row for each. Pending days are the previous
+report's pending days plus one, or 0 if the site was not on the previous report. The TXP remark (the
+reason for the problem, or what is needed to fix it) is typed in by an administrator on the Report
+page: click **Add remark** in the row, or tick several rows and give them one remark. It is saved in
+the database, printed as "TXP Remark" in the Excel report, and carried to the next day's report while
+the site stays listed. A site on its first day starts with no remark.
 
-An administrator can change the thresholds and the default feedback under **Settings**. A change
+An administrator can change the thresholds under **Settings**. A change
 applies to reports generated afterwards.
 
 ## Continuing from the old reports
@@ -52,8 +66,8 @@ Without starting history, every site begins at 0 pending days. To continue the o
 
 | Role | Can do |
 |---|---|
-| Administrator | Everything: import files, generate reports, edit feedback, manage users, change thresholds, delete data |
-| User | View the dashboard, reports and sites, and download the Excel report. Cannot change anything |
+| Administrator | Everything: import files, generate reports, edit TXP remarks, manage users, change thresholds, delete data |
+| User | View the dashboard, reports and sites, download the Excel report, and type TXP remarks. Cannot import files, generate reports or change settings |
 
 Administrators add users under **Settings > Users**. Everyone changes their own password under
 **My account**.

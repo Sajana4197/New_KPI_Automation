@@ -8,7 +8,7 @@
     <div class="empty-ic">{{ icon("file", "lg") }}</div>
     <h2>There is no report to show yet</h2>
     <p>Once KPI files have been imported, generate the day's report from the dashboard. It will appear here with
-      every listed site, its pending days and its feedback.</p>
+      every listed site, its pending days and its TXP remark.</p>
     <div class="empty-actions"><a class="btn" href="/">{{ icon("grid") }}<span>Go to the dashboard</span></a></div>
   </div>
 </section>
@@ -17,7 +17,7 @@
   <div>
     <h1>Daily report · {{ d|d }}</h1>
     <p>{% if report.is_seed %}Starting history loaded from an old Excel report on {{ report.generated_at|dt }}.
-      {% else %}The sites listed for each KPI on this day, with their pending days and feedback.{% endif %}</p>
+      {% else %}The sites listed for each KPI on this day, with their pending days and TXP remarks.{% endif %}</p>
   </div>
   <div class="page-actions">
     {% if prev or next %}
@@ -29,7 +29,7 @@
     {% endif %}
     {% if not report.is_seed %}
     {% if can("admin") and has_data %}
-    <form method="post" action="/generate" data-confirm="Regenerate the report for {{ d|d }}? Feedback typed into this report is kept for sites that are still listed.">
+    <form method="post" action="/generate" data-confirm="Regenerate the report for {{ d|d }}? TXP remarks typed into this report are kept for sites that are still listed.">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">
       <input type="hidden" name="date" value="{{ d.isoformat() }}">
       <button class="btn act-btn act-regen" data-busy="Generating…">{{ icon("refresh") }}<span>Regenerate</span></button>
@@ -67,7 +67,7 @@
     <span class="kt-ic" aria-hidden="true">{{ code }}</span>
     <span class="kt-k">{{ KPI_LABELS[k] }}</span>
     <b class="kt-v">{{ count|num }}</b>
-    <small class="kt-s">sites · {{ short }} for {{ thresholds.min_hours|int }} h or more</small>
+    <small class="kt-s">paths · {{ short }} for {{ thresholds.min_hours|int }} h or more</small>
   </button>
   {% endfor %}
 </div>
@@ -75,7 +75,7 @@
 <section class="card" id="report-card">
   <div class="set-head">
     <span class="set-icon">{{ icon("file") }}</span>
-    <div><h2>Sites on the report</h2><p>Search, filter and sort the listed sites.{% if can("admin") %} Tick sites to give them the same feedback at once.{% endif %}</p></div>
+    <div><h2>Sites on the report</h2><p>Search, filter and sort the listed sites.{% if can("user") %} Tick sites to give them the same TXP remark at once.{% endif %}</p></div>
   </div>
   <div class="filters filters-v2">
     <div class="fx-top">
@@ -96,6 +96,13 @@
         <select class="select select-sm" id="f-source">
           <option value="">All 4 files</option>
           {% for k in SOURCE_ORDER %}<option value="{{ k }}">{{ SOURCES[k].label }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="fx-group">
+        <span class="fx-label">Path</span>
+        <select class="select select-sm" id="f-path">
+          <option value="">All paths</option>
+          {% for k in PATH_KINDS %}<option value="{{ k }}">{{ PATH_KIND_LABELS[k] }}</option>{% endfor %}
         </select>
       </label>
       <label class="fx-group">
@@ -123,21 +130,22 @@
   <div class="table-wrap">
     <table class="table cards" id="report-table">
       <thead><tr>
-        {% if can("admin") %}<th class="sel"><input type="checkbox" id="sel-all" aria-label="Select every row on this page"></th>{% endif %}
+        {% if can("user") %}<th class="sel"><input type="checkbox" id="sel-all" aria-label="Select every row on this page"></th>{% endif %}
         <th class="right">No.</th>
         <th><button class="th-sort" type="button" data-sort="name">Site{{ icon("arrow-down") }}</button></th>
+        <th><button class="th-sort" type="button" data-sort="path">Path{{ icon("arrow-down") }}</button></th>
         <th><button class="th-sort" type="button" data-sort="category">Category{{ icon("arrow-down") }}</button></th>
         <th><button class="th-sort" type="button" data-sort="hours"><span id="th-hours" title="Hours at or above the threshold">Hours above</span>{{ icon("arrow-down") }}</button></th>
         <th class="right"><button class="th-sort" type="button" data-sort="peak">Peak{{ icon("arrow-down") }}</button></th>
         <th><button class="th-sort" type="button" data-sort="pending">Pending{{ icon("arrow-down") }}</button></th>
-        <th><button class="th-sort" type="button" data-sort="feedback">Feedback{{ icon("arrow-down") }}</button></th>      </tr></thead>
+        <th><button class="th-sort" type="button" data-sort="feedback">TXP Remark{{ icon("arrow-down") }}</button></th>      </tr></thead>
       <tbody></tbody>
     </table>
   </div>
-  {% if can("admin") %}
+  {% if can("user") %}
   <div class="bulk hide" id="bulk">
     <b id="bulk-count"></b>
-    <input class="input input-sm" id="bulk-text" list="fb-suggestions" placeholder="Feedback for the selected sites" maxlength="500" autocomplete="off">
+    <input class="input input-sm" id="bulk-text" list="fb-suggestions" placeholder="TXP remark for the selected sites" maxlength="500" autocomplete="off">
     <button class="btn btn-sm btn-white" type="button" id="bulk-apply">Apply</button>
     <button class="link-btn" type="button" id="bulk-all"></button>
     <button class="link-btn" type="button" id="bulk-clear">Clear</button>

@@ -35,7 +35,7 @@
     return {
       type: "line", name: s.name, data: s.values, connectNulls: false,
       showSymbol: count <= 1, symbol: "circle", symbolSize: 8,
-      lineStyle: { width: 2, color: s.color },
+      lineStyle: { width: 2, color: s.color, type: s.dash ? [6, 4] : "solid" },
       itemStyle: { color: s.color, borderColor: ink.surface, borderWidth: 2 },
       areaStyle: area ? { color: s.color, opacity: 0.09 } : undefined,
       emphasis: { focus: "none", scale: 1.3, lineStyle: { width: 2 } }

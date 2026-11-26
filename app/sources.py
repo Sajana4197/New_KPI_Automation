@@ -37,7 +37,30 @@ _SIGNATURES: dict[str, set[str]] = {
     "zte_q2": {"begin time", "managed element", "source ip name", "destination ip name"},
 }
 
-COLUMNS = ["ext_key", "name", "path", "hour_ts", "pd_pct", "rtt_ms", "jitter_ms", "tx_packets"]
+COLUMNS = ["ext_key", "name", "path", "kind", "hour_ts", "pd_pct", "rtt_ms", "jitter_ms", "tx_packets"]
+
+# Path types. Huawei: the task name ends in _dscp_0 (best effort) or _dscp_46 (priority; _dscp_6 is the
+# same, a typing slip in a few task names). ZTE: a destination IP of 60.x-69.x is the SLT path, any other
+# the Mobitel path. Each path type of a site is judged on its own.
+PATH_KINDS = ["BE", "Priority", "Mobitel", "SLT"]
+PATH_KIND_LABELS = {"BE": "BE (dscp 0)", "Priority": "Priority (dscp 46)", "Mobitel": "Mobitel path", "SLT": "SLT path"}
+_DSCP = re.compile(r"[_\- ]*dscp[_\- ]?(\d+)\s*$", re.I)
+
+
+def split_task(task: str) -> tuple[str, str]:
+    """Huawei IPPM task name -> (site name, path type). 'abc_dscp_0' -> ('abc', 'BE')."""
+    task = (task or "").strip()
+    m = _DSCP.search(task)
+    if not m:
+        return task, "Priority"
+    code = m.group(1)
+    return task[:m.start()].strip(), ("BE" if code == "0" else "Priority" if code in ("46", "6") else f"DSCP {code}")
+
+
+def zte_kind(dst_ip) -> str:
+    """ZTE destination IP -> 'SLT' for 60.x.x.x - 69.x.x.x, otherwise 'Mobitel'."""
+    m = re.match(r"\s*(\d+)\.", str(dst_ip or ""))
+    return "SLT" if m and 60 <= int(m.group(1)) <= 69 else "Mobitel"
 
 
 class UnknownFileFormat(Exception):
@@ -100,13 +123,6 @@ def _text(series) -> pd.Series:
     return series.astype("string").str.strip()
 
 
-def _zte_key(id_series, name_series) -> pd.Series:
-    """Managed element ID as text; falls back to the number in brackets at the end of the name."""
-    ids = _num(id_series).astype("Int64").astype("string")
-    from_name = name_series.str.extract(r"\((\d+)\)\s*$")[0]
-    return ids.fillna(from_name).fillna(name_series.str.lower())
-
-
 def parse_file(path: Path) -> ParsedFile:
     rows = _read_first_sheet(path)
     source, h = _find_header(rows)
@@ -118,10 +134,13 @@ def parse_file(path: Path) -> ParsedFile:
     out = pd.DataFrame(index=df.index)
 
     if source == "huawei_ippm":
-        out["name"] = _text(_col(df, "name of ippm task"))
-        out["ext_key"] = out["name"].str.lower()
+        task = _text(_col(df, "name of ippm task"))
+        split = {t: split_task(t) for t in task.dropna().unique()}
+        out["name"] = task.map(lambda t: split[t][0] if t in split else pd.NA).astype("string")
+        out["kind"] = task.map(lambda t: split[t][1] if t in split else "Priority")
         ne = _col(df, "ne name", required=False)
-        out["path"] = _text(ne) if ne is not None else "IPPM"
+        node = _text(ne).fillna("IPPM") if ne is not None else "IPPM"
+        out["path"] = out["kind"] + " · " + node
         out["hour_ts"] = pd.to_datetime(_col(df, "time"), errors="coerce")
         out["pd_pct"] = _num(_col(df, "average packets lost ratio of forward performance monitoring", prefix=True))
         out["rtt_ms"] = _num(_col(df, "average time delay of rtt", prefix=True))
@@ -132,19 +151,20 @@ def parse_file(path: Path) -> ParsedFile:
     else:
         if source == "zte_hist":
             out["name"] = _text(_col(df, "managedelement name"))
-            out["ext_key"] = _zte_key(_col(df, "managedelement"), out["name"])
-            out["path"] = _text(_col(df, "source ip")) + " > " + _text(_col(df, "destination ip"))
+            src_ip, dst_ip = _text(_col(df, "source ip")), _text(_col(df, "destination ip"))
             out["hour_ts"] = pd.to_datetime(_col(df, "start time"), errors="coerce")
             pd_col = _col(df, "packet loss rate", prefix=True)
         else:
             out["name"] = _text(_col(df, "managed element"))
-            out["ext_key"] = _zte_key(_col(df, "managedelement id"), out["name"])
             if source == "zte_q1":
-                out["path"] = _text(_col(df, "srcip")) + " > " + _text(_col(df, "dstip"))
+                src_ip, dst_ip = _text(_col(df, "srcip")), _text(_col(df, "dstip"))
             else:
-                out["path"] = _text(_col(df, "source ip name")) + " > " + _text(_col(df, "destination ip name"))
+                src_ip, dst_ip = _text(_col(df, "source ip name")), _text(_col(df, "destination ip name"))
             out["hour_ts"] = pd.to_datetime(_col(df, "begin time"), errors="coerce")
             pd_col = _col(df, "packet loss rate", prefix=True)
+        # A site is one managed element name: the same ID under two names is two sites.
+        out["path"] = src_ip + " > " + dst_ip
+        out["kind"] = dst_ip.map(zte_kind, na_action="ignore").fillna("Mobitel")
         # ZTE exports packet loss as a 0-1 ratio (even where the header says %), so
         # convert to percent. Rounding removes floating point noise at the threshold.
         out["pd_pct"] = (_num(pd_col) * 100).round(6)
@@ -166,17 +186,17 @@ def parse_file(path: Path) -> ParsedFile:
     if out.empty:
         raise UnknownFileFormat("The file has the right headers but no data rows.")
     out["path"] = out["path"].fillna("-")
+    out["kind"] = out["kind"].astype("string").fillna("Priority")
 
     report_date = _report_date(source, out["hour_ts"], end_ts)
 
-    # The newest name wins when one ID carries two names in the same file (renamed mid-day).
+    # One site per name (upper/lower case aside); Huawei names are taken without the _dscp_x ending.
+    out["ext_key"] = out["name"].str.lower()
     latest = out.sort_values("hour_ts").groupby("ext_key")["name"].last()
-    if latest.size < out["name"].nunique():
-        warnings.append(f"{out['name'].nunique() - latest.size} site(s) appear under two names; the newest name is used.")
     out["name"] = out["ext_key"].map(latest)
 
     # Several rows can describe the same path and hour; keep the worst value of each.
-    data = out.groupby(["ext_key", "name", "path", "hour_ts"], as_index=False, sort=False).agg(
+    data = out.groupby(["ext_key", "name", "path", "kind", "hour_ts"], as_index=False, sort=False).agg(
         pd_pct=("pd_pct", "max"), rtt_ms=("rtt_ms", "max"),
         jitter_ms=("jitter_ms", "max"), tx_packets=("tx_packets", "max"),
     )

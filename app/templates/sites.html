@@ -119,13 +119,25 @@
         {% if r.samples is none or not vals %}
         <span class="small muted">No measurements on {{ latest|d if latest else "the latest day" }}</span>
         {% else %}
-        {% for k, hours, peak in [("PD", r.pd_hours, r.pd_max), ("JITTER", r.jitter_hours, r.jitter_max), ("RTT", r.rtt_hours, r.rtt_max)] %}
-        <div class="strip-row" title="{{ KPI_LABELS[k] }}: {{ hours }} hour{{ '' if hours == 1 else 's' }} at or above {{ limits[k]|g }} {{ KPI_UNITS[k] }}, peak {{ peak|kpi_value(k) }}">
-          <i class="dot {{ k }}"></i>
-          <span class="strip {{ k }}" data-k="{{ k }}" style="--n:{{ n_hours }}" role="img" aria-label="{{ KPI_LABELS[k] }}: {{ hours }} of {{ r.samples }} hours at or above the threshold">
-            {%- for v in vals[k] %}<i{% if v is none %} class="n"{% elif v >= limits[k] %} class="o"{% endif %}></i>{% endfor -%}
+        {% for t in strips.kinds.get(r.id, []) if vals.get(t.kind) %}
+        {% set kv = vals[t.kind] %}
+        {% set kworst = [t.pd_hours, t.jitter_hours, t.rtt_hours]|max %}
+        <div class="strip-group{% if kworst >= min_hours %} is-listed{% endif %}">
+          <span class="strip-kind" title="{{ PATH_KIND_LABELS.get(t.kind, t.kind) }}{% if kworst >= min_hours %}: listed{% endif %}">
+            <span class="tag path-tag path-{{ t.kind|lower }}">{{ t.kind }}</span>
+            {% if kworst >= min_hours %}<small class="strip-listed">listed</small>{% endif %}
           </span>
-          <b class="strip-n{% if hours %} over{% endif %}">{{ hours }} h</b>
+          <div class="strip-set">
+          {% for k, hours, peak in [("PD", t.pd_hours, t.pd_max), ("JITTER", t.jitter_hours, t.jitter_max), ("RTT", t.rtt_hours, t.rtt_max)] %}
+          <div class="strip-row" title="{{ t.kind }} path · {{ KPI_LABELS[k] }}: {{ hours }} hour{{ '' if hours == 1 else 's' }} at or above {{ limits[k]|g }} {{ KPI_UNITS[k] }}, peak {{ peak|kpi_value(k) }}">
+            <i class="dot {{ k }}"></i>
+            <span class="strip {{ k }}" data-k="{{ k }}" data-kind="{{ t.kind }}" style="--n:{{ n_hours }}" role="img" aria-label="{{ t.kind }} path, {{ KPI_LABELS[k] }}: {{ hours }} of {{ t.samples }} hours at or above the threshold">
+              {%- for v in kv[k] %}<i{% if v is none %} class="n"{% elif v >= limits[k] %} class="o"{% endif %}></i>{% endfor -%}
+            </span>
+            <b class="strip-n{% if hours >= min_hours %} over{% elif hours %} near{% endif %}">{{ hours }} h</b>
+          </div>
+          {% endfor %}
+          </div>
         </div>
         {% endfor %}
         {% endif %}
@@ -154,7 +166,7 @@
   </div>
   {% endif %}
   <div class="site-legend">
-    <span>{{ icon("info", "sm") }} Each block is one hour of the latest day, using the site's worst path in that hour.</span>
+    <span>{{ icon("info", "sm") }} Each path type of a site has its own strips (BE / Priority, Mobitel / SLT). Each block is one hour of the latest day, using the worst path of that type. A path type is listed at {{ min_hours }} hours or more.</span>
     <span class="strip-key"><i class="o PD"></i><i class="o JITTER"></i><i class="o RTT"></i> at or above the threshold</span>
     <span class="strip-key"><i></i> below it</span>
     <span class="strip-key"><i class="n"></i> no measurement</span>

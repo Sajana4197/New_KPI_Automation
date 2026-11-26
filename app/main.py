@@ -25,7 +25,7 @@ from . import db, excel_report, queries, remote, security, watcher
 from .config import APP_DIR, APP_NAME, BASE_DIR, config
 from .reporting import KPI_LABELS, KPIS, delete_date, generate_report
 from .seed import SeedError, load_seed
-from .sources import CATEGORIES, CATEGORY_LABELS, SOURCE_ORDER, SOURCES
+from .sources import CATEGORIES, CATEGORY_LABELS, PATH_KIND_LABELS, PATH_KINDS, SOURCE_ORDER, SOURCES
 
 log = logging.getLogger("kpi.web")
 class _AssetVersion:
@@ -154,7 +154,7 @@ templates.env.filters.update(data_json=data_json, d=fmt_date, dt=fmt_datetime, n
 templates.env.globals.update(
     icon=icon, app_name=APP_NAME, asset_v=ASSET_VERSION, SOURCES=SOURCES, SOURCE_ORDER=SOURCE_ORDER, KPIS=KPIS,
     KPI_LABELS=KPI_LABELS, KPI_UNITS=KPI_UNITS, CATEGORIES=CATEGORIES, CATEGORY_LABELS=CATEGORY_LABELS,
-    ROLES=security.ROLES, ROLE_LABELS=security.ROLE_LABELS, ROLE_HELP=security.ROLE_HELP,
+    PATH_KINDS=PATH_KINDS, PATH_KIND_LABELS=PATH_KIND_LABELS, ROLES=security.ROLES, ROLE_LABELS=security.ROLE_LABELS, ROLE_HELP=security.ROLE_HELP,
     MIN_PASSWORD=security.MIN_PASSWORD_LENGTH)
 
 
@@ -452,15 +452,17 @@ def report_page(request: Request, d: date, user: dict = Depends(security.require
         raise _not_found()
     items = queries.report_items(report)
     suggestions = [r["feedback"] for r in db.query(
-        """SELECT feedback, count(*) AS n FROM report_items WHERE report_id = %s
-           GROUP BY feedback ORDER BY n DESC, feedback LIMIT 40""", (report["id"],))]
+        """SELECT feedback, count(*) AS n FROM report_items
+           WHERE feedback <> '' AND (report_id = %s OR feedback_edited_at IS NOT NULL)
+           GROUP BY feedback ORDER BY n DESC, feedback LIMIT 60""", (report["id"],))]
     th = report["thresholds"] or db.get_setting("thresholds")
     page_data = {
-        "date": d, "canEdit": security.can(user, "admin"), "kpis": KPIS, "labels": KPI_LABELS, "units": KPI_UNITS,
+        "date": d, "canEdit": security.can(user, "user"), "kpis": KPIS, "labels": KPI_LABELS, "units": KPI_UNITS,
         "sources": {k: {"label": s.label, "short": s.short} for k, s in SOURCES.items()},
         "items": [[i["id"], i["kpi"], i["site_id"], i["name"], i["category"], i["hours"], i["pending"],
                    i["feedback"], i["source"], 1 if i["is_new"] else 0,
-                   None if i["peak"] is None else round(float(i["peak"]), 3), 1 if i["edited"] else 0]
+                   None if i["peak"] is None else round(float(i["peak"]), 3), 1 if i["edited"] else 0,
+                   i["path"] or ""]
                   for i in items],
     }
     prev, nxt = queries.previous_report(d), queries.next_report(d)
@@ -500,7 +502,7 @@ def report_preview(request: Request, d: date, sheet: str = "summary", user: dict
     if sheet == "classic":
         classic = [(excel_report.CLASSIC_CODE[k], i) for k in KPIS for i in c["by_kpi"][k]]
     return render(request, "preview.html", active="report", d=d, sheet=sheet, sheets=excel_report.SHEETS, kpi=kpi,
-                  rows=c["by_kpi"][kpi] if kpi else [], classic=classic, classic_heads=excel_report.CLASSIC_HEADS, filename=excel_report.filename_for(d),
+                  rows=c["by_kpi"][kpi] if kpi else [], classic=classic, classic_heads=excel_report.CLASSIC_HEADS, classic_name=excel_report.classic_name, filename=excel_report.filename_for(d),
                   counts={"pd": len(c["by_kpi"]["PD"]), "jitter": len(c["by_kpi"]["JITTER"]),
                           "rtt": len(c["by_kpi"]["RTT"]), "new": len(c["fresh"])}, **c)
 
@@ -511,16 +513,14 @@ class FeedbackIn(BaseModel):
 
 
 @app.post("/api/feedback", dependencies=[CSRF])
-def save_feedback(payload: FeedbackIn, user: dict = Depends(security.require("admin"))):
+def save_feedback(payload: FeedbackIn, user: dict = Depends(security.require("user"))):
     text = re.sub(r"\s+", " ", payload.feedback).strip()
-    if not text:
-        return JSONResponse({"error": "Feedback cannot be empty."}, status_code=400)
     rows = db.query(
         """UPDATE report_items SET feedback = %s, feedback_edited_at = now(), feedback_edited_by = %s
            WHERE id = ANY(%s) RETURNING id, site_name""", (text, user["id"], payload.ids))
     if rows:
         what = rows[0]["site_name"] if len(rows) == 1 else f"{len(rows)} sites"
-        db.log_activity(user, "Edited feedback", f"{what}: {text[:120]}")
+        db.log_activity(user, "Edited TXP remark", f"{what}: {text[:120]}" if text else f"{what}: remark cleared")
     return {"saved": [r["id"] for r in rows], "feedback": text}
 
 
@@ -566,13 +566,13 @@ def api_site(site_id: int, date: str | None = None, user: dict = Depends(securit
     if d not in site["dates"]:
         d = site["dates"][0] if site["dates"] else None
     th = db.get_setting("thresholds")
-    day = queries.site_day(site_id, d, th) if d else {"daily": None, "hourly": [], "paths": []}
+    day = queries.site_day(site_id, d, th) if d else {"daily": None, "hourly": [], "paths": [], "kinds": []}
     daily = day["daily"] or {}
     src = SOURCES[site["source"]]
     return {
         "id": site["id"], "name": site["name"], "category": site["category"],
         "category_label": CATEGORY_LABELS.get(site["category"], ""), "source": src.label,
-        "ext_id": site["ext_key"] if src.vendor == "ZTE" else None,
+        "ext_id": site["ne_id"], "kinds": site["kinds"],
         "first_seen": site["first_seen"], "last_seen": site["last_seen"], "date": d,
         "name_count": len(site["names"]),
         "limits": {"PD": th["pd_pct"], "JITTER": th["jitter_ms"], "RTT": th["rtt_ms"]},
@@ -582,10 +582,15 @@ def api_site(site_id: int, date: str | None = None, user: dict = Depends(securit
                   "JITTER": {"hours": daily.get("jitter_hours"), "peak": daily.get("jitter_max")},
                   "RTT": {"hours": daily.get("rtt_hours"), "peak": daily.get("rtt_max")}} if daily else None,
         "hourly": [{"t": r["hour_ts"], "PD": r["pd"], "JITTER": r["jitter"], "RTT": r["rtt"]} for r in day["hourly"]],
-        "paths": [{"label": r["label"], "samples": r["samples"], "PD": r["pd_max"], "JITTER": r["jitter_max"],
-                   "RTT": r["rtt_max"]} for r in day["paths"][:12]],
+        "by_kind": queries.hourly_by_kind(site_id, d) if d else {"hours": [], "kinds": [], "values": {}},
+        "kind_rows": [{"kind": r["kind"],
+                       "PD": {"hours": r["pd_hours"], "peak": r["pd_max"]},
+                       "JITTER": {"hours": r["jitter_hours"], "peak": r["jitter_max"]},
+                       "RTT": {"hours": r["rtt_hours"], "peak": r["rtt_max"]}} for r in day["kinds"]],
+        "paths": [{"label": r["label"], "kind": r["kind"], "samples": r["samples"], "PD": r["pd_max"],
+                   "JITTER": r["jitter_max"], "RTT": r["rtt_max"]} for r in day["paths"][:12]],
         "path_total": len(day["paths"]),
-        "listed": [{"kpi": r["kpi"], "hours": r["sample_count"], "pending": r["pending_days"],
+        "listed": [{"kpi": r["kpi"], "path": r["path_kind"], "hours": r["sample_count"], "pending": r["pending_days"],
                     "feedback": r["feedback"]} for r in site["listed"] if r["report_date"] == d and not r["is_seed"]],
     }
 
@@ -599,11 +604,12 @@ def site_page(request: Request, site_id: int, date: str | None = None, user: dic
     if d not in site["dates"]:
         d = site["dates"][0] if site["dates"] else None
     th = db.get_setting("thresholds")
-    day = queries.site_day(site_id, d, th) if d else {"daily": None, "hourly": [], "paths": []}
+    day = queries.site_day(site_id, d, th) if d else {"daily": None, "hourly": [], "paths": [], "kinds": []}
     history = list(reversed(site["history"]))
     page_data = {
         "thresholds": th,
         "hourly": [{"t": r["hour_ts"], "PD": r["pd"], "JITTER": r["jitter"], "RTT": r["rtt"]} for r in day["hourly"]],
+        "byKind": queries.hourly_by_kind(site_id, d) if d else {"hours": [], "kinds": [], "values": {}},
         "history": {"dates": [r["report_date"] for r in history], "PD": [r["pd_hours"] for r in history],
                     "JITTER": [r["jitter_hours"] for r in history], "RTT": [r["rtt_hours"] for r in history]},
     }
@@ -781,8 +787,7 @@ def settings_page(request: Request, a_user: str = "", a_action: str = "", a_from
     def act_link(page: int) -> str:
         return "/settings?" + urlencode({**act_filter, "a_page": page}) + "#activity"
 
-    return render(request, "settings.html", active="settings", thresholds=db.get_setting("thresholds"),
-                  default_feedback=db.get_setting("default_feedback"), users=queries.users(),
+    return render(request, "settings.html", active="settings", thresholds=db.get_setting("thresholds"), users=queries.users(),
                   act=act, act_filter=act_filter, act_link=act_link, seeds=queries.seeds(), storage=queries.storage(),
                   first_report=db.scalar("SELECT min(report_date) FROM reports WHERE NOT is_seed"),
                   server=remote.status(),
@@ -792,16 +797,14 @@ def settings_page(request: Request, a_user: str = "", a_action: str = "", a_from
 
 @app.post("/settings/rules", dependencies=[CSRF])
 def settings_rules(request: Request, pd_pct: float = Form(...), jitter_ms: float = Form(...),
-                   rtt_ms: float = Form(...), min_hours: int = Form(...), default_feedback: str = Form(""),
+                   rtt_ms: float = Form(...), min_hours: int = Form(...),
                    user: dict = Depends(security.require("admin"))):
     if not (0 < pd_pct <= 100 and 0 < jitter_ms <= 100000 and 0 < rtt_ms <= 100000 and 1 <= min_hours <= 24):
         flash(request, "bad", "Those values are out of range. Nothing was changed.")
         return go("/settings")
     new = {"pd_pct": pd_pct, "jitter_ms": jitter_ms, "rtt_ms": rtt_ms, "min_hours": min_hours}
     old = db.get_setting("thresholds")
-    feedback = re.sub(r"\s+", " ", default_feedback).strip()[:200] or db.DEFAULT_SETTINGS["default_feedback"]
     db.set_setting("thresholds", new, user["id"])
-    db.set_setting("default_feedback", feedback, user["id"])
     if any(float(old[k]) != float(new[k]) for k in new):
         db.log_activity(user, "Changed thresholds",
                         f"PD {new['pd_pct']:g} %, jitter {new['jitter_ms']:g} ms, RTT {new['rtt_ms']:g} ms, "

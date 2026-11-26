@@ -10,7 +10,7 @@ import xlsxwriter
 from . import db, queries
 from .config import APP_DIR, APP_NAME, config
 from .reporting import KPI_LABELS, KPIS
-from .sources import CATEGORIES, CATEGORY_LABELS, SOURCES
+from .sources import CATEGORIES, CATEGORY_LABELS, PATH_KIND_LABELS, SOURCES
 
 BRAND, SKY, GREEN = "#0056A2", "#00B4EB", "#50B748"
 INK, INK_2, MUTED, LINE, WASH = "#0F1B2D", "#4A5A70", "#7A889B", "#E3E8F0", "#F3F6FB"
@@ -35,8 +35,21 @@ SHEETS = [("summary", "Summary", BRAND), ("pd", "Packet Drop", KPI_COLOR["PD"]),
           ("rtt", "RTT", KPI_COLOR["RTT"]), ("new", "New Sites", GREEN), ("classic", "Classic layout", MUTED)]
 SHEET_KPI = {"pd": "PD", "jitter": "JITTER", "rtt": "RTT"}
 # Classic layout: one list, one row per site and KPI.
-CLASSIC_HEADS = ["Date", "Site Name", "PD/RTT/JTR/", "Sample count exceeding the threshold", "Category", "pending days", "TXP Remark"]
+CLASSIC_HEADS = ["Date", "Site Name", "PD/RTT/JTR/", "Sample count exceeding the threshold", "Category", "pending days",
+                 "TXP Remark", "Path"]
 CLASSIC_CODE = {"PD": "PD", "JITTER": "JTR", "RTT": "RTT"}
+_DSCP_END = {"BE": "_dscp_0", "Priority": "_dscp_46"}
+
+
+def classic_name(item: dict) -> str:
+    """Site name as the old notebook report wrote it: Huawei sites carry their _dscp_0 / _dscp_46 ending."""
+    if item.get("source") == "huawei_ippm" and item.get("path") in _DSCP_END:
+        return item["name"] + _DSCP_END[item["path"]]
+    return item["name"]
+
+
+def path_text(item: dict) -> str:
+    return PATH_KIND_LABELS.get(item.get("path") or "", item.get("path") or "")
 
 
 def collect(report_date: date) -> dict:
@@ -54,9 +67,11 @@ def collect(report_date: date) -> dict:
     made = f"Generated {report['generated_at'].astimezone():%d %b %Y %H:%M}"
     if report.get("generated_by_label"):
         made += f" by {report['generated_by_label']}"
-    rules = [f"{KPI_LABELS[k]}: a site is listed with {_rule_text(k, th)} (worst path in each hour)." for k in KPIS]
+    rules = [f"{KPI_LABELS[k]}: a path is listed with {_rule_text(k, th)}." for k in KPIS]
+    rules.append("Each path type of a site is checked on its own: Huawei BE (_dscp_0) and Priority (_dscp_46); "
+                 "ZTE Mobitel and SLT (destination IP 60.x to 69.x). In each hour the worst path of that type counts.")
     rules.append("Pending days: the previous report's value plus one while the site stays listed; 0 on the first day.")
-    rules.append("Feedback is carried forward from the previous report until someone changes it.")
+    rules.append("The TXP remark is typed in by hand and carried forward to the next report until someone changes it.")
     return {
         "report": report, "items": items, "th": th, "window": window, "breakdown": breakdown,
         "sources": queries.source_status(report_date),
@@ -270,9 +285,11 @@ def build(report_date: date) -> bytes:
     top5 = top4 + 3 + len(sources)
     ws.merge_range(top5, 1, top5, 5, "Rules used", f["section"])
     ws.set_row(top5, 22)
-    rules = [f"{KPI_LABELS[k]}: a site is listed with {_rule_text(k, th)} (worst path in each hour)." for k in KPIS]
+    rules = [f"{KPI_LABELS[k]}: a path is listed with {_rule_text(k, th)}." for k in KPIS]
+    rules.append("Each path type of a site is checked on its own: Huawei BE (_dscp_0) and Priority (_dscp_46); "
+                 "ZTE Mobitel and SLT (destination IP 60.x to 69.x). In each hour the worst path of that type counts.")
     rules.append("Pending days: the previous report's value plus one while the site stays listed; 0 on the first day.")
-    rules.append("Feedback is carried forward from the previous report until someone changes it.")
+    rules.append("The TXP remark is typed in by hand and carried forward to the next report until someone changes it.")
     for n, text in enumerate(rules):
         ws.merge_range(top5 + 1 + n, 1, top5 + 1 + n, 5, text, fmt(font_color=INK_2, text_wrap=True))
     ws.set_landscape()
@@ -285,48 +302,51 @@ def build(report_date: date) -> bytes:
         ws = wb.add_worksheet(KPI_SHEET[kpi])
         ws.hide_gridlines(2)
         ws.set_tab_color(KPI_COLOR[kpi])
-        widths = [6, 56, 11, 13, 12, 12, 44, 24, 9]
+        widths = [6, 52, 18, 11, 13, 12, 12, 44, 24, 9]
         for c, w in enumerate(widths):
             ws.set_column(c, c, w)
         ws.set_row(0, 28)
-        ws.merge_range(0, 0, 0, 8, f"{KPI_LABELS[kpi]}  ·  {len(rows):,} sites", f["sheet_title"])
-        ws.merge_range(1, 0, 1, 8, f"{report_date:%d %B %Y}  ·  listed with {_rule_text(kpi, th)}", f["sheet_sub"])
+        ws.merge_range(0, 0, 0, 9, f"{KPI_LABELS[kpi]}  ·  {len(rows):,} paths on "
+                       f"{len({i['site_id'] or i['name'] for i in rows}):,} sites", f["sheet_title"])
+        ws.merge_range(1, 0, 1, 9, f"{report_date:%d %B %Y}  ·  listed with {_rule_text(kpi, th)}, each path type on its own",
+                       f["sheet_sub"])
         ws.set_row(2, 6)
-        heads = ["No.", "Site", "Category", "Hours above threshold", f"Peak ({KPI_UNIT[kpi]})", "Pending days",
-                 "Feedback", "KPI file", "New site"]
+        heads = ["No.", "Site", "Path", "Category", "Hours above threshold", f"Peak ({KPI_UNIT[kpi]})", "Pending days",
+                 "TXP Remark", "KPI file", "New site"]
         ws.set_row(3, 32)
         for c, h in enumerate(heads):
-            ws.write(3, c, h, f["head" if c in (1, 6, 7) else "head_c"])
+            ws.write(3, c, h, f["head" if c in (1, 2, 7, 8) else "head_c"])
         for n, i in enumerate(rows):
             r = 4 + n
             alt = "_alt" if n % 2 else ""
             ws.write(r, 0, n + 1, f["num" + alt])
             ws.write(r, 1, i["name"], f["cell" + alt])
-            ws.write(r, 2, i["category"], f["num" + alt])
-            ws.write(r, 3, i["hours"], f["num" + alt])
+            ws.write(r, 2, path_text(i), f["cell" + alt])
+            ws.write(r, 3, i["category"], f["num" + alt])
+            ws.write(r, 4, i["hours"], f["num" + alt])
             if i["peak"] is None:
-                ws.write(r, 4, "", f["cell" + alt])
+                ws.write(r, 5, "", f["cell" + alt])
             else:
-                ws.write(r, 4, round(float(i["peak"]), 2), f["dec" + alt])
-            ws.write(r, 5, i["pending"], f["num" + alt])
-            ws.write(r, 6, i["feedback"], f["wrap" + alt])
-            ws.write(r, 7, SOURCES[i["source"]].label if i["source"] in SOURCES else "", f["cell" + alt])
+                ws.write(r, 5, round(float(i["peak"]), 2), f["dec" + alt])
+            ws.write(r, 6, i["pending"], f["num" + alt])
+            ws.write(r, 7, i["feedback"], f["wrap" + alt])
+            ws.write(r, 8, SOURCES[i["source"]].label if i["source"] in SOURCES else "", f["cell" + alt])
             if i["is_new"]:
-                ws.write(r, 8, "NEW", f["new_flag"])
+                ws.write(r, 9, "NEW", f["new_flag"])
             else:
-                ws.write(r, 8, "", f["cell" + alt])
+                ws.write(r, 9, "", f["cell" + alt])
         last = 3 + max(len(rows), 1)
         if rows:
-            ws.conditional_format(4, 3, last, 3, {"type": "data_bar", "bar_color": KPI_TINT[kpi], "bar_solid": True,
+            ws.conditional_format(4, 4, last, 4, {"type": "data_bar", "bar_color": KPI_TINT[kpi], "bar_solid": True,
                                                   "min_type": "num", "min_value": 0, "max_type": "num",
                                                   "max_value": 25, "bar_no_border": True})
-            ws.conditional_format(4, 5, last, 5, {"type": "cell", "criteria": ">=", "value": 30,
+            ws.conditional_format(4, 6, last, 6, {"type": "cell", "criteria": ">=", "value": 30,
                                                   "format": f["pend_long"]})
-            ws.conditional_format(4, 5, last, 5, {"type": "cell", "criteria": "between", "minimum": 7, "maximum": 29,
+            ws.conditional_format(4, 6, last, 6, {"type": "cell", "criteria": "between", "minimum": 7, "maximum": 29,
                                                   "format": f["pend_mid"]})
         else:
-            ws.merge_range(4, 0, 4, 8, "No sites reached the threshold on this day.", f["cell"])
-        ws.autofilter(3, 0, last, 8)
+            ws.merge_range(4, 0, 4, 9, "No sites reached the threshold on this day.", f["cell"])
+        ws.autofilter(3, 0, last, 9)
         ws.freeze_panes(4, 2)
         ws.set_landscape()
         ws.set_paper(9)
@@ -370,7 +390,7 @@ def build(report_date: date) -> bytes:
                           "text_wrap": True, "align": "center", "valign": "vcenter"})
     day = wb.add_format({"font_name": FONT, "font_size": 10, "num_format": "dd/mm/yyyy", "align": "center",
                          "valign": "vcenter", "border": 1, "border_color": LINE})
-    for c, (h, w) in enumerate(zip(CLASSIC_HEADS, (13, 56, 14, 20, 12, 13, 36))):
+    for c, (h, w) in enumerate(zip(CLASSIC_HEADS, (13, 56, 14, 20, 12, 13, 36, 18))):
         ws.set_column(c, c, w)
         ws.write(0, c, h, head)
     r = 0
@@ -378,14 +398,15 @@ def build(report_date: date) -> bytes:
         for i in by_kpi[kpi]:
             r += 1
             ws.write_datetime(r, 0, report_date, day)
-            ws.write(r, 1, i["name"], f["cell"])
+            ws.write(r, 1, classic_name(i), f["cell"])
             ws.write(r, 2, CLASSIC_CODE[kpi], f["num"])
             ws.write(r, 3, i["hours"], f["num"])
             ws.write(r, 4, i["category"], f["num"])
             ws.write(r, 5, i["pending"], f["num"])
             ws.write(r, 6, i["feedback"], f["cell"])
+            ws.write(r, 7, path_text(i), f["cell"])
     if r:
-        ws.autofilter(0, 0, r, 6)
+        ws.autofilter(0, 0, r, 7)
     ws.set_row(0, 44)
     ws.freeze_panes(1, 2)
 

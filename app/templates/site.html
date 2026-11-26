@@ -11,7 +11,8 @@
     <p>
       <span class="tag" title="Category">{{ site.category }} · {{ CATEGORY_LABELS.get(site.category, "") }}</span>
       <span class="tag" title="KPI file">{{ SOURCES[site.source].label }}</span>
-      {% if SOURCES[site.source].vendor == "ZTE" %}<span class="tag" title="Managed element ID">ID {{ site.ext_key }}</span>{% endif %}
+      {% if site.ne_id %}<span class="tag" title="Managed element ID">ID {{ site.ne_id }}</span>{% endif %}
+      {% for k in site.kinds %}<span class="tag path-tag path-{{ k|lower }}" title="Path type">{{ PATH_KIND_LABELS.get(k, k) }}</span>{% endfor %}
       <span style="display:inline-block">First seen {{ site.first_seen|d }} · last seen {{ site.last_seen|d }}</span>
     </p>
   </div>
@@ -34,21 +35,40 @@
 {% else %}
 
 <div class="tiles" style="grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">
-  {% for k, hours, peak in [("PD", day.daily.pd_hours, day.daily.pd_max), ("JITTER", day.daily.jitter_hours, day.daily.jitter_max), ("RTT", day.daily.rtt_hours, day.daily.rtt_max)] %}
-  <div class="tile">
-    <span class="tile-label"><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</span>
-    <span class="tile-value">{{ hours }} <span class="small soft" style="letter-spacing:0;font-weight:600">hour{{ '' if hours == 1 else 's' }} at or above {{ limits[k]|g }} {{ KPI_UNITS[k] }}</span></span>
+  {% set hcol = {"PD": "pd_hours", "JITTER": "jitter_hours", "RTT": "rtt_hours"} %}
+  {% set pcol = {"PD": "pd_max", "JITTER": "jitter_max", "RTT": "rtt_max"} %}
+  {% for k in KPIS %}
+  {% set hours = day.daily[hcol[k]] %}
+  <div class="tile kpi-tile">
+    <span class="tile-label"><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}
+      <small class="soft">at or above {{ limits[k]|g }} {{ KPI_UNITS[k] }}</small></span>
+    {% if day.kinds %}
+    <div class="kind-lines">
+      {% for t in day.kinds %}
+      {% set h = t[hcol[k]] %}
+      <div class="kind-line{% if h >= min_hours %} is-listed{% elif h %} is-near{% endif %}">
+        <span class="tag path-tag path-{{ t.kind|lower }}" title="{{ PATH_KIND_LABELS.get(t.kind, t.kind) }}">{{ t.kind }}</span>
+        <b class="kind-h">{{ h }} h</b>
+        <span class="kind-peak">peak {{ t[pcol[k]]|kpi_value(k) }}</span>
+        {% if h >= min_hours %}<span class="pill pill-crit">{{ icon("alert") }} Listed</span>
+        {% else %}<span class="pill pill-good">{{ icon("check") }} OK</span>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <span class="tile-value">{{ hours }} <span class="small soft" style="letter-spacing:0;font-weight:600">hour{{ '' if hours == 1 else 's' }}</span></span>
     <span class="tile-meta">
       {% if hours >= min_hours %}<span class="pill pill-crit">{{ icon("alert") }} Listed</span>
       {% else %}<span class="pill pill-good">{{ icon("check") }} Not listed</span>{% endif %}
-      <span>peak {{ peak|kpi_value(k) }}</span>
+      <span>peak {{ day.daily[pcol[k]]|kpi_value(k) }}</span>
     </span>
+    {% endif %}
   </div>
   {% endfor %}
   <div class="tile">
     <span class="tile-label">Measured</span>
     <span class="tile-value">{{ day.daily.samples }} <span class="small soft" style="letter-spacing:0;font-weight:600">hours</span></span>
-    <span class="tile-meta"><span>{{ day.daily.path_count }} path{{ '' if day.daily.path_count == 1 else 's' }} · a site is listed at {{ min_hours }} hours or more</span></span>
+    <span class="tile-meta"><span>{{ day.daily.path_count }} path{{ '' if day.daily.path_count == 1 else 's' }}{% if day.kinds %} in {{ day.kinds|length }} path type{{ '' if day.kinds|length == 1 else 's' }}{% endif %} · each path type is listed at {{ min_hours }} hours or more</span></span>
   </div>
 </div>
 
@@ -59,8 +79,8 @@
   <div class="card-body"><div class="list">
     {% for r in listed_today %}
     <div class="list-row">
-      <div class="list-main"><b class="kpi-name"><i class="dot {{ r.kpi }}"></i>{{ KPI_LABELS[r.kpi] }}</b>
-        <small>{{ r.sample_count }} hours above threshold · feedback: {{ r.feedback }}</small></div>
+      <div class="list-main"><b class="kpi-name"><i class="dot {{ r.kpi }}"></i>{{ KPI_LABELS[r.kpi] }}{% if r.path_kind %} · {{ r.path_kind }} path{% endif %}</b>
+        <small>{{ r.sample_count }} hours above threshold{% if r.feedback %} · TXP remark: {{ r.feedback }}{% endif %}</small></div>
       {% if r.pending_days %}<span class="pill {{ 'pill-crit' if r.pending_days >= 30 else 'pill-serious' if r.pending_days >= 7 else 'pill-warn' }}">{{ icon("clock") }} {{ r.pending_days }} day{{ '' if r.pending_days == 1 else 's' }} pending</span>
       {% else %}<span class="pill">First day</span>{% endif %}
     </div>
@@ -70,8 +90,42 @@
 {% endif %}
 
 <section class="card">
+  <div class="card-head"><div><h2>Paths on this day</h2><p>Each IP path or measuring point of the site</p></div></div>
+  <div class="card-body">
+    <div class="path-rows">
+      {% for p in day.paths %}
+      {% set ends = p.label.split(' > ') %}
+      <div class="path-row">
+        <div class="path-id">
+          {% if p.kind %}<span class="tag path-tag path-{{ p.kind|lower }}">{{ p.kind }} path</span>{% endif %}
+          {% if ends|length == 2 %}
+          <div class="path-ends mono"><span><em>From</em>{{ ends[0] }}</span><span><em>To</em>{{ ends[1] }}</span></div>
+          {% else %}
+          <div class="path-ends mono"><span>{{ p.label }}</span></div>
+          {% endif %}
+          <div class="path-meas">{{ p.samples }} of 24 hours measured</div>
+        </div>
+        {% for k, peak, hrs in [("PD", p.pd_max, p.pd_hours), ("JITTER", p.jitter_max, p.jitter_hours), ("RTT", p.rtt_max, p.rtt_hours)] %}
+        {% set bad = peak is not none and peak >= limits[k] %}
+        {% set listed = hrs is not none and hrs >= min_hours %}
+        <div class="path-kpi{% if listed %} is-listed{% elif bad %} is-over{% endif %}">
+          <div class="path-kpi-name"><i class="dot {{ k }}"></i>{{ KPI_LABELS[k] }}</div>
+          <div class="path-kpi-peak{% if bad %} over{% endif %}">{{ peak|kpi_value(k) }}<small>peak</small></div>
+          <div class="path-kpi-sub">
+            {% if k == "PD" %}average {{ p.pd_avg|kpi_value("PD") }} · {% endif %}
+            <b{% if listed %} class="over"{% endif %}>{{ hrs or 0 }} h</b> above limit
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
   <div class="card-head"><div><h2>Hour by hour</h2>
-    <p>The worst path of the site in each hour. The dashed line is the threshold. Each chart has its own scale.</p></div></div>
+    <div class="legend path-legend" id="hour-legend"></div></div></div>
   <div class="card-body">
     <div class="multiples">
       {% for k in KPIS %}
@@ -81,29 +135,6 @@
       </div>
       {% endfor %}
     </div>
-  </div>
-</section>
-
-<section class="card">
-  <div class="card-head"><div><h2>Paths on this day</h2><p>Each IP path or measuring point of the site</p></div></div>
-  <div class="table-wrap" style="margin-top:10px">
-    <table class="table cards">
-      <thead><tr><th>Path</th><th class="right">Hours measured</th><th class="right">Packet drop peak</th><th class="right">Packet drop average</th>
-        <th class="right">Jitter peak</th><th class="right">RTT peak</th><th class="right">Hours above (PD / jitter / RTT)</th></tr></thead>
-      <tbody>
-        {% for p in day.paths %}
-        <tr>
-          <td class="wrap mono full" data-label="Path">{{ p.label }}</td>
-          <td class="right num" data-label="Hours measured">{{ p.samples }}</td>
-          <td class="right num nowrap{% if p.pd_max is not none and p.pd_max >= limits.PD %} over{% endif %}" data-label="Packet drop peak">{{ p.pd_max|kpi_value("PD") }}</td>
-          <td class="right num nowrap" data-label="Packet drop average">{{ p.pd_avg|kpi_value("PD") }}</td>
-          <td class="right num nowrap{% if p.jitter_max is not none and p.jitter_max >= limits.JITTER %} over{% endif %}" data-label="Jitter peak">{{ p.jitter_max|kpi_value("JITTER") }}</td>
-          <td class="right num nowrap{% if p.rtt_max is not none and p.rtt_max >= limits.RTT %} over{% endif %}" data-label="RTT peak">{{ p.rtt_max|kpi_value("RTT") }}</td>
-          <td class="right num nowrap full" data-label="Hours above (PD / jitter / RTT)">{{ p.pd_hours }} / {{ p.jitter_hours }} / {{ p.rtt_hours }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
 </section>
 
@@ -140,15 +171,16 @@
     {% if site.listed %}
     <div class="table-wrap" style="margin-top:10px">
       <table class="table cards">
-        <thead><tr><th>Report</th><th>KPI</th><th class="right">Hours</th><th class="right">Pending days</th><th>Feedback</th></tr></thead>
+        <thead><tr><th>Report</th><th>KPI</th><th>Path</th><th class="right">Hours</th><th class="right">Pending days</th><th>TXP Remark</th></tr></thead>
         <tbody>
           {% for r in site.listed %}
           <tr>
             <td class="nowrap" data-label="Report"><a href="/report/{{ r.report_date.isoformat() }}#{{ r.kpi }}">{{ r.report_date|d }}</a></td>
             <td class="nowrap" data-label="KPI"><span class="kpi-name"><i class="dot {{ r.kpi }}"></i>{{ KPI_LABELS[r.kpi] }}</span></td>
+            <td class="nowrap" data-label="Path">{{ r.path_kind or "–" }}</td>
             <td class="right num" data-label="Hours">{{ r.sample_count }}</td>
             <td class="right num" data-label="Pending days">{{ r.pending_days }}</td>
-            <td class="wrap full" data-label="Feedback">{{ r.feedback }}</td>
+            <td class="wrap full" data-label="TXP Remark">{{ r.feedback }}</td>
           </tr>
           {% endfor %}
         </tbody>

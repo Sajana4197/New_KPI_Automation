@@ -1861,3 +1861,84 @@ dialog.modal.srv-modal { width: min(620px, calc(100vw - 32px)); max-height: calc
 @keyframes hero-wave-b { from { transform: translateX(-900px); } to { transform: translateX(0); } }
 @media (max-width: 640px) { .hero-wave { height: 90px; } }
 @media (prefers-reduced-motion: reduce) { .hero-wave-a, .hero-wave-b { animation: none; } }
+
+/* ---- path type tags (BE / Priority, Mobitel / SLT) ---- */
+.tag.path-tag { font-weight: 650; letter-spacing: .01em; }
+.tag.path-be       { color: #3d4f66; border-color: rgba(74, 90, 112, .35);  background: rgba(74, 90, 112, .08); }
+.tag.path-priority { color: #00589a; border-color: rgba(0, 120, 200, .35);  background: rgba(0, 150, 230, .10); }
+.tag.path-mobitel  { color: #1f7a1b; border-color: rgba(40, 150, 35, .35);  background: rgba(80, 183, 72, .12); }
+.tag.path-slt      { color: #8a4f00; border-color: rgba(214, 140, 0, .45);  background: rgba(250, 178, 25, .16); }
+
+/* ---- Sites list: one group of strips per path type ---- */
+.strips { gap: 8px; }
+.strip-group { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 4px 10px; align-items: center; }
+.strip-group + .strip-group { padding-top: 8px; border-top: 1px dashed var(--line); }
+.strip-kind { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.strip-kind .tag { font-size: 11.5px; }
+.strip-listed { font-size: 11px; font-weight: 700; color: var(--crit-text); letter-spacing: .02em; }
+.strip-set { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.strip-n.near { color: var(--warn-text, #8a5a00); }
+@media (max-width: 640px) {
+  .strip-group { grid-template-columns: minmax(0, 1fr); }
+  .strip-kind { flex-direction: row; align-items: center; gap: 8px; }
+}
+.dot.path-dot-be { background: #7a8aa0; }
+.dot.path-dot-priority { background: #0a7fd0; }
+.dot.path-dot-mobitel { background: #2f9e2a; }
+.dot.path-dot-slt { background: #e09a00; }
+
+/* ---- KPI cards broken down by path type (site page and slide-in panel) ---- */
+.kpi-tile .tile-label { flex-wrap: wrap; gap: 4px 8px; }
+.kpi-tile .tile-label small { font-weight: 600; font-size: 12px; }
+.kind-lines { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.kind-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "tag pill" "h peak";
+  align-items: center; gap: 4px 10px; padding: 8px 12px;
+  border-radius: 12px; background: rgba(255, 255, 255, .55); border: 1px solid var(--line-2); }
+.kind-line > .tag { grid-area: tag; justify-self: start; }
+.kind-line > .pill { grid-area: pill; justify-self: end; }
+.kind-line > .kind-h { grid-area: h; white-space: nowrap; }
+.kind-line > .kind-peak { grid-area: peak; justify-self: end; }
+.kind-line.is-listed { background: var(--crit-bg); border-color: rgba(208, 59, 59, .28); }
+.kind-line.is-near { border-color: rgba(250, 178, 25, .45); }
+.kind-h { font-size: 20px; font-weight: 800; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.kind-line.is-listed .kind-h { color: var(--crit-text); }
+.kind-peak { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.kind-line .pill { font-size: 12px; }
+.drawer-stat .kind-mini { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.kind-mini > span { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--muted); }
+.kind-mini > span b { color: var(--text); font-variant-numeric: tabular-nums; }
+.kind-mini > span.is-listed b { color: var(--crit-text); }
+
+/* Site page: one row per path on the chosen day */
+.path-rows { display: flex; flex-direction: column; gap: 10px; }
+.path-row { display: grid; grid-template-columns: minmax(220px, 1.3fr) repeat(3, minmax(0, 1fr)); gap: 10px; align-items: stretch;
+  padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--glass-soft, var(--surface)); }
+.path-id { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
+.path-ends { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; color: var(--text); }
+.path-ends span { overflow-wrap: anywhere; }
+.path-ends em { display: inline-block; width: 40px; font-style: normal; font-family: var(--font); font-size: 12px; color: var(--muted); }
+.path-meas { font-size: 12.5px; color: var(--muted); }
+.path-kpi { display: flex; flex-direction: column; gap: 3px; padding: 8px 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px solid transparent; min-width: 0; }
+.path-kpi.is-over { border-color: var(--serious-bg); }
+.path-kpi.is-listed { background: var(--crit-bg); border-color: rgba(208, 59, 59, .25); }
+.path-kpi-name { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 650; color: var(--text-2); }
+.path-kpi-peak { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.path-kpi-peak.over { color: var(--crit-text); }
+.path-kpi-peak small { margin-left: 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.path-kpi-sub { font-size: 12.5px; color: var(--text-2); }
+@media (max-width: 900px) {
+  .path-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .path-id { grid-column: 1 / -1; }
+}
+@media (max-width: 560px) { .path-row { grid-template-columns: 1fr; } }
+
+/* Hour-by-hour key: one entry per path, a short line sample in the path's colour */
+.path-legend { flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; }
+.path-legend span { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; }
+.line-key { display: inline-block; width: 22px; height: 0; border-top: 3px solid; margin-right: 7px; vertical-align: middle; border-radius: 2px; }
+.line-key.dashed { border-top-style: dashed; }
+
+/* Report page: a row with no TXP remark yet */
+.fb.fb-empty { color: var(--brand); font-weight: 600; opacity: .85; }
+.fb.fb-empty .icon { opacity: 1; }
+span.fb.fb-empty { color: var(--muted); font-weight: 400; }

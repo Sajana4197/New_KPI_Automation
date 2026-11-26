@@ -1,12 +1,13 @@
 """Read-side queries behind the pages."""
 from __future__ import annotations
 
+import re
 import threading
 from datetime import date, timedelta
 
 from . import db
 from .reporting import KPIS, new_sites_sql
-from .sources import CATEGORIES, CATEGORY_LABELS, SOURCE_ORDER, SOURCES
+from .sources import CATEGORIES, CATEGORY_LABELS, PATH_KINDS, SOURCE_ORDER, SOURCES
 
 PENDING_BUCKETS = [("First day", 0, 0), ("1–2 days", 1, 2), ("3–6 days", 3, 6),
                    ("7–13 days", 7, 13), ("14–29 days", 14, 29), ("30 days or more", 30, 10 ** 9)]
@@ -56,15 +57,19 @@ def next_report(d: date) -> dict | None:
 
 def report_items(report: dict) -> list[dict]:
     return db.query(
-        f"""SELECT ri.id, ri.kpi, ri.site_id, ri.site_name AS name, ri.category, ri.sample_count AS hours,
+        f"""SELECT ri.id, ri.kpi, ri.site_id, ri.site_name AS name, ri.path_kind AS path, ri.category,
+                   ri.sample_count AS hours,
                    ri.pending_days AS pending, ri.feedback, (ri.feedback_edited_at IS NOT NULL) AS edited,
                    s.source, coalesce(({new_sites_sql('s')}), false) AS is_new,
-                   CASE ri.kpi WHEN 'PD' THEN sd.pd_max WHEN 'JITTER' THEN sd.jitter_max ELSE sd.rtt_max END AS peak
+                   CASE ri.kpi WHEN 'PD' THEN coalesce(pd.pd_max, sd.pd_max)
+                               WHEN 'JITTER' THEN coalesce(pd.jitter_max, sd.jitter_max)
+                               ELSE coalesce(pd.rtt_max, sd.rtt_max) END AS peak
             FROM report_items ri
             LEFT JOIN sites s ON s.id = ri.site_id
+            LEFT JOIN path_daily pd ON pd.site_id = ri.site_id AND pd.report_date = %(d)s AND pd.kind = ri.path_kind
             LEFT JOIN site_daily sd ON sd.site_id = ri.site_id AND sd.report_date = %(d)s
             WHERE ri.report_id = %(rid)s
-            ORDER BY ri.sample_count DESC, lower(ri.site_name)""",
+            ORDER BY ri.sample_count DESC, lower(ri.site_name), ri.path_kind""",
         {"d": report["report_date"], "rid": report["id"]})
 
 
@@ -124,7 +129,7 @@ def category_summary(d: date, items: list[dict]) -> list[dict]:
         for k in KPIS:
             rows = sorted((i for i in mine if i["kpi"] == k),
                           key=lambda i: (-i["hours"], -(i["peak"] if i["peak"] is not None else -1), -i["pending"], i["name"].lower()))
-            top[k] = [{"name": i["name"], "site_id": i["site_id"], "hours": i["hours"], "peak": i["peak"],
+            top[k] = [{"name": i["name"], "path": i["path"], "site_id": i["site_id"], "hours": i["hours"], "peak": i["peak"],
                        "pending": i["pending"], "feedback": i["feedback"], "is_new": bool(i["is_new"])} for i in rows[:WORST_LIMIT]]
         out.append({"code": c, "label": CATEGORY_LABELS[c], "total": total, "flagged": flagged,
                     "share": flagged / total * 100 if total else 0, "top": top,
@@ -172,9 +177,9 @@ def last_import_at(d: date):
 SITE_SORTS = {
     "name": "lower(s.name)",
     "newest": "s.first_seen DESC, lower(s.name)",
-    "pd": "sd.pd_hours DESC NULLS LAST, sd.pd_max DESC NULLS LAST, lower(s.name)",
-    "jitter": "sd.jitter_hours DESC NULLS LAST, sd.jitter_max DESC NULLS LAST, lower(s.name)",
-    "rtt": "sd.rtt_hours DESC NULLS LAST, sd.rtt_max DESC NULLS LAST, lower(s.name)",
+    "pd": "pw.pd_hours DESC NULLS LAST, sd.pd_max DESC NULLS LAST, lower(s.name)",
+    "jitter": "pw.jitter_hours DESC NULLS LAST, sd.jitter_max DESC NULLS LAST, lower(s.name)",
+    "rtt": "pw.rtt_hours DESC NULLS LAST, sd.rtt_max DESC NULLS LAST, lower(s.name)",
 }
 
 
@@ -182,13 +187,16 @@ def _like(text: str) -> str:
     return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
-WORST_HOURS = "greatest(sd.pd_hours, sd.jitter_hours, sd.rtt_hours)"
+WORST_HOURS = "pw.worst"            # most hours of any one path type of the site (the report's rule)
 SITE_STATUS = {          # condition on the latest day's roll-up; %(minh)s = hours needed to be listed
     "listed": f"{WORST_HOURS} >= %(minh)s",
     "near": f"{WORST_HOURS} BETWEEN 1 AND %(minh)s - 1",
     "healthy": f"{WORST_HOURS} = 0",
 }
-SITES_FROM = "sites s LEFT JOIN site_daily sd ON sd.site_id = s.id AND sd.report_date = %(latest)s"
+SITES_FROM = ("sites s LEFT JOIN site_daily sd ON sd.site_id = s.id AND sd.report_date = %(latest)s "
+              "LEFT JOIN (SELECT site_id, max(pd_hours) AS pd_hours, max(jitter_hours) AS jitter_hours, "
+              "max(rtt_hours) AS rtt_hours, max(greatest(pd_hours, jitter_hours, rtt_hours)) AS worst FROM path_daily "
+              "WHERE report_date = %(latest)s GROUP BY site_id) pw ON pw.site_id = s.id")
 
 
 def sites_page(*, q: str, source: str, category: str, show: str, sort: str, page: int,
@@ -223,7 +231,7 @@ def sites_page(*, q: str, source: str, category: str, show: str, sort: str, page
     params.update({"limit": per_page, "offset": (page - 1) * per_page})
     rows = db.query(
         f"""SELECT s.id, s.name, s.source, s.category, s.first_seen, s.last_seen,
-                   sd.pd_hours, sd.jitter_hours, sd.rtt_hours, sd.pd_max, sd.jitter_max, sd.rtt_max, sd.samples,
+                   pw.pd_hours, pw.jitter_hours, pw.rtt_hours, sd.pd_max, sd.jitter_max, sd.rtt_max, sd.samples,
                    (SELECT count(*) FROM site_names n WHERE n.site_id = s.id) AS name_count
             FROM {SITES_FROM}
             WHERE {cond} ORDER BY {SITE_SORTS.get(sort, SITE_SORTS['name'])}
@@ -268,25 +276,70 @@ def day_hours(d: date) -> list:
     return hours
 
 
+def kind_order(kind: str) -> int:
+    return PATH_KINDS.index(kind) if kind in PATH_KINDS else len(PATH_KINDS)
+
+
 def site_strips(site_ids: list[int], d: date | None) -> dict:
-    """Worst-path value per hour for a handful of sites: {"hours": [...], "sites": {id: {"PD": [...], ...}}}."""
+    """Per path type of each site: worst value of that type in every hour, plus its hours and peaks.
+
+    {"hours": [...], "sites": {id: {kind: {"PD": [...], ...}}}, "kinds": {id: [{kind, pd_hours, pd_max, ...}]}}
+    """
     if not site_ids or not d:
-        return {"hours": [], "sites": {}}
+        return {"hours": [], "sites": {}, "kinds": {}}
     hours = day_hours(d)
     index = {t: i for i, t in enumerate(hours)}
-    sites = {i: {k: [None] * len(hours) for k in KPIS} for i in site_ids}
+    sites: dict[int, dict] = {i: {} for i in site_ids}
     for r in db.query(
-            """SELECT p.site_id, h.hour_ts, max(h.pd_pct) AS pd, max(h.jitter_ms) AS jitter, max(h.rtt_ms) AS rtt
+            """SELECT p.site_id, p.kind, h.hour_ts, max(h.pd_pct) AS pd, max(h.jitter_ms) AS jitter,
+                      max(h.rtt_ms) AS rtt
                FROM kpi_hourly h JOIN paths p ON p.id = h.path_id
-               WHERE p.site_id = ANY(%s) AND h.report_date = %s GROUP BY 1, 2""", (site_ids, d)):
+               WHERE p.site_id = ANY(%s) AND h.report_date = %s GROUP BY 1, 2, 3""", (site_ids, d)):
         i = index.get(r["hour_ts"])
         if i is None:
             continue
-        row = sites[r["site_id"]]
+        row = sites[r["site_id"]].setdefault(r["kind"], {k: [None] * len(hours) for k in KPIS})
         for k, col in (("PD", "pd"), ("JITTER", "jitter"), ("RTT", "rtt")):
             if r[col] is not None:
                 row[k][i] = round(float(r[col]), 2)
-    return {"hours": hours, "sites": sites}
+    kinds: dict[int, list] = {i: [] for i in site_ids}
+    for r in db.query(
+            """SELECT site_id, kind, samples, pd_hours, jitter_hours, rtt_hours, pd_max, jitter_max, rtt_max
+               FROM path_daily WHERE site_id = ANY(%s) AND report_date = %s""", (site_ids, d)):
+        kinds[r["site_id"]].append(r)
+    for rows in kinds.values():
+        rows.sort(key=lambda r: kind_order(r["kind"]))
+    return {"hours": hours, "sites": sites, "kinds": kinds}
+
+
+def hourly_by_kind(site_id: int, d: date) -> dict:
+    """One site's hourly values per path type, aligned to its hours: {"kinds": [...], "values": {kind: {"PD": [...]}}}."""
+    rows = db.query(
+        """SELECT h.hour_ts, p.kind, max(h.pd_pct) AS pd, max(h.jitter_ms) AS jitter, max(h.rtt_ms) AS rtt
+           FROM kpi_hourly h JOIN paths p ON p.id = h.path_id
+           WHERE p.site_id = %s AND h.report_date = %s GROUP BY 1, 2""", (site_id, d))
+    hours = sorted({r["hour_ts"] for r in rows})
+    index = {t: i for i, t in enumerate(hours)}
+    values: dict[str, dict] = {}
+    for r in rows:
+        slot = values.setdefault(r["kind"], {k: [None] * len(hours) for k in KPIS})
+        for k, col in (("PD", "pd"), ("JITTER", "jitter"), ("RTT", "rtt")):
+            slot[k][index[r["hour_ts"]]] = None if r[col] is None else round(float(r[col]), 3)
+    kinds = sorted(values, key=kind_order)
+    # The same hours again, one series per path (a site can have two paths of the same type).
+    per_path: dict[str, dict] = {}
+    for r in db.query(
+            """SELECT h.hour_ts, p.label, p.kind, max(h.pd_pct) AS pd, max(h.jitter_ms) AS jitter, max(h.rtt_ms) AS rtt
+               FROM kpi_hourly h JOIN paths p ON p.id = h.path_id
+               WHERE p.site_id = %s AND h.report_date = %s GROUP BY 1, 2, 3""", (site_id, d)):
+        slot = per_path.setdefault(r["label"], {"label": r["label"], "kind": r["kind"],
+                                                "values": {k: [None] * len(hours) for k in KPIS}})
+        if r["hour_ts"] not in index:
+            continue
+        for k, col in (("PD", "pd"), ("JITTER", "jitter"), ("RTT", "rtt")):
+            slot["values"][k][index[r["hour_ts"]]] = None if r[col] is None else round(float(r[col]), 3)
+    paths = sorted(per_path.values(), key=lambda p: (kind_order(p["kind"]), p["label"]))
+    return {"hours": hours, "kinds": kinds, "values": values, "paths": paths}
 
 
 def site_counts() -> dict:
@@ -308,9 +361,13 @@ def site_detail(site_id: int) -> dict | None:
         """SELECT report_date, samples, path_count, pd_hours, jitter_hours, rtt_hours, pd_max, jitter_max, rtt_max
            FROM site_daily WHERE site_id = %s ORDER BY report_date DESC LIMIT 60""", (site_id,))
     site["listed"] = db.query(
-        """SELECT r.report_date, r.is_seed, ri.kpi, ri.sample_count, ri.pending_days, ri.feedback
+        """SELECT r.report_date, r.is_seed, ri.kpi, ri.path_kind, ri.sample_count, ri.pending_days, ri.feedback
            FROM report_items ri JOIN reports r ON r.id = ri.report_id
-           WHERE ri.site_id = %s ORDER BY r.report_date DESC, ri.kpi LIMIT 120""", (site_id,))
+           WHERE ri.site_id = %s ORDER BY r.report_date DESC, ri.kpi, ri.path_kind LIMIT 120""", (site_id,))
+    m = re.search(r"\((\d+)\)\s*$", site["name"] or "")
+    site["ne_id"] = m.group(1) if m and site["source"].startswith("zte") else None
+    site["kinds"] = [r["kind"] for r in db.query(
+        "SELECT DISTINCT kind FROM paths WHERE site_id = %s AND kind <> '' ORDER BY 1", (site_id,))]
     return site
 
 
@@ -321,7 +378,7 @@ def site_day(site_id: int, d: date, thresholds: dict) -> dict:
            FROM kpi_hourly h JOIN paths p ON p.id = h.path_id
            WHERE p.site_id = %s AND h.report_date = %s GROUP BY h.hour_ts ORDER BY h.hour_ts""", (site_id, d))
     paths = db.query(
-        """SELECT p.label, count(*) AS samples,
+        """SELECT p.label, max(p.kind) AS kind, count(*) AS samples,
                   max(h.pd_pct) AS pd_max, avg(h.pd_pct) AS pd_avg,
                   max(h.jitter_ms) AS jitter_max, max(h.rtt_ms) AS rtt_max,
                   count(*) FILTER (WHERE h.pd_pct >= %(pd)s) AS pd_hours,
@@ -329,10 +386,19 @@ def site_day(site_id: int, d: date, thresholds: dict) -> dict:
                   count(*) FILTER (WHERE h.rtt_ms >= %(rtt)s) AS rtt_hours
            FROM kpi_hourly h JOIN paths p ON p.id = h.path_id
            WHERE p.site_id = %(s)s AND h.report_date = %(d)s
-           GROUP BY p.label ORDER BY max(h.pd_pct) DESC NULLS LAST, p.label""",
+           GROUP BY p.label ORDER BY max(p.kind), max(h.pd_pct) DESC NULLS LAST, p.label""",
         {"s": site_id, "d": d, "pd": thresholds["pd_pct"], "jit": thresholds["jitter_ms"],
          "rtt": thresholds["rtt_ms"]})
-    return {"daily": daily, "hourly": hourly, "paths": paths}
+    kinds = db.query(
+        """SELECT kind, samples, pd_hours, jitter_hours, rtt_hours, pd_max, jitter_max, rtt_max
+           FROM path_daily WHERE site_id = %s AND report_date = %s ORDER BY kind""", (site_id, d))
+    kinds.sort(key=lambda r: kind_order(r["kind"]))
+    if daily and kinds:
+        # Hours above a threshold, as the report counts them: the most of any one path type.
+        daily = dict(daily)
+        for col in ("pd_hours", "jitter_hours", "rtt_hours"):
+            daily[col] = max(k[col] for k in kinds)
+    return {"daily": daily, "hourly": hourly, "paths": paths, "kinds": kinds}
 
 
 # ---- imports ---------------------------------------------------------------------------

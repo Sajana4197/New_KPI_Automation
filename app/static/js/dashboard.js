@@ -110,6 +110,7 @@
         bar.firstChild.style.width = (s.hours / Math.max(dayHours, s.hours) * 100).toFixed(1) + "%";
         bar.firstChild.style.background = color;
         var facts = el("div", { class: "worst-facts" },
+          s.path ? el("span", { class: "tag path-tag path-" + s.path.toLowerCase(), text: s.path }) : null,
           el("span", {}, el("b", { text: String(s.hours) }), " h above threshold"),
           s.peak !== null && s.peak !== undefined ? el("span", {}, "Peak ", el("b", { text: TX.num(s.peak, 2) + " " + UNITS[k] })) : null,
           el("span", { class: s.pending >= 30 ? "pend-long" : s.pending >= 7 ? "pend-mid" : "" },
