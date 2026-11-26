@@ -16,6 +16,7 @@ _pool: ConnectionPool | None = None
 DEFAULT_SETTINGS: dict[str, Any] = {
     # Same rules as the original IPPM notebook.
     "thresholds": {"pd_pct": 0.5, "jitter_ms": 7, "rtt_ms": 20, "min_hours": 3},
+    "default_feedback": "TXOP to check",   # TXP remark a site gets on its first day
 }
 
 

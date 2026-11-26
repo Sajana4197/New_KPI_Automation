@@ -6,8 +6,9 @@ The rules are those of the original IPPM notebook, judged per path type of a sit
   * count the hours at or above the threshold (PD 0.5 %, jitter 7 ms, RTT 20 ms);
   * list the site's path type when 3 or more hours breach;
   * pending days = previous report's value + 1 when the site was listed there, else 0;
-  * the TXP remark (stored as feedback) is typed in by hand; it is carried over from the previous
-    report, and a site that was not listed the day before starts with no remark.
+  * the TXP remark (stored as feedback) is carried over from the previous report; a site that was
+    not listed the day before starts with the default remark ("TXOP to check", set in Settings).
+    Anyone signed in can then edit it.
 The only change: every source is evaluated on its own data (the notebook reused the
 first ZTE file's jitter/RTT results for the other two ZTE files).
 """
@@ -127,6 +128,7 @@ def generate_report(report_date: date, user: dict | None = None) -> dict:
     """Build (or rebuild) the report for one date. Returns the reports row."""
     with db.tx() as conn:
         th = db.get_setting("thresholds", conn)
+        default_feedback = db.get_setting("default_feedback", conn) or db.DEFAULT_SETTINGS["default_feedback"]
         min_hours = int(th["min_hours"])
         rebuild_daily(conn, report_date)
 
@@ -185,7 +187,7 @@ def generate_report(report_date: date, user: dict | None = None) -> dict:
                     "kpi": kpi, "site_id": row["site_id"], "site_name": row["name"], "path_kind": row["kind"],
                     "category": category_for(row["name"]), "sample_count": count,
                     "pending_days": before["pending_days"] + 1 if before else 0,
-                    "feedback": mine["feedback"] if mine else (before["feedback"] if before else ""),
+                    "feedback": mine["feedback"] if mine else (before["feedback"] if before else default_feedback),
                     "edited_at": mine["feedback_edited_at"] if mine else None,
                     "edited_by": mine["feedback_edited_by"] if mine else None,
                 })

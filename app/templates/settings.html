@@ -74,6 +74,9 @@
         </label>
         {% endfor %}
       </div>
+      <label class="field rule-fb"><span>Default TXP remark for a site on its first day</span>
+        <input class="input" name="default_feedback" value="{{ default_feedback }}" maxlength="200" required>
+        <small>A site that was already listed the day before keeps the remark it had. Anyone can edit a remark on the Report page.</small></label>
       <div class="set-savebar">
         <span class="small muted">{{ icon("info", "sm") }} New thresholds apply to reports generated from now on. Regenerate a day to apply them to it.</span>
         <button class="btn" data-busy="Saving…">{{ icon("check") }}<span>Save rules</span></button>

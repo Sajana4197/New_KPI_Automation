@@ -515,13 +515,16 @@ class FeedbackIn(BaseModel):
 @app.post("/api/feedback", dependencies=[CSRF])
 def save_feedback(payload: FeedbackIn, user: dict = Depends(security.require("user"))):
     text = re.sub(r"\s+", " ", payload.feedback).strip()
+    reset = not text   # clearing a remark puts the default back ("TXOP to check")
+    if reset:
+        text = db.get_setting("default_feedback") or db.DEFAULT_SETTINGS["default_feedback"]
     rows = db.query(
         """UPDATE report_items SET feedback = %s, feedback_edited_at = now(), feedback_edited_by = %s
            WHERE id = ANY(%s) RETURNING id, site_name""", (text, user["id"], payload.ids))
     if rows:
         what = rows[0]["site_name"] if len(rows) == 1 else f"{len(rows)} sites"
-        db.log_activity(user, "Edited TXP remark", f"{what}: {text[:120]}" if text else f"{what}: remark cleared")
-    return {"saved": [r["id"] for r in rows], "feedback": text}
+        db.log_activity(user, "Edited TXP remark", f"{what}: reset to the default ({text})" if reset else f"{what}: {text[:120]}")
+    return {"saved": [r["id"] for r in rows], "feedback": text, "reset": reset}
 
 
 # ---- sites -------------------------------------------------------------------------------
@@ -788,6 +791,7 @@ def settings_page(request: Request, a_user: str = "", a_action: str = "", a_from
         return "/settings?" + urlencode({**act_filter, "a_page": page}) + "#activity"
 
     return render(request, "settings.html", active="settings", thresholds=db.get_setting("thresholds"), users=queries.users(),
+                  default_feedback=db.get_setting("default_feedback") or db.DEFAULT_SETTINGS["default_feedback"],
                   act=act, act_filter=act_filter, act_link=act_link, seeds=queries.seeds(), storage=queries.storage(),
                   first_report=db.scalar("SELECT min(report_date) FROM reports WHERE NOT is_seed"),
                   server=remote.status(),
@@ -797,14 +801,18 @@ def settings_page(request: Request, a_user: str = "", a_action: str = "", a_from
 
 @app.post("/settings/rules", dependencies=[CSRF])
 def settings_rules(request: Request, pd_pct: float = Form(...), jitter_ms: float = Form(...),
-                   rtt_ms: float = Form(...), min_hours: int = Form(...),
+                   rtt_ms: float = Form(...), min_hours: int = Form(...), default_feedback: str = Form(""),
                    user: dict = Depends(security.require("admin"))):
     if not (0 < pd_pct <= 100 and 0 < jitter_ms <= 100000 and 0 < rtt_ms <= 100000 and 1 <= min_hours <= 24):
         flash(request, "bad", "Those values are out of range. Nothing was changed.")
         return go("/settings")
     new = {"pd_pct": pd_pct, "jitter_ms": jitter_ms, "rtt_ms": rtt_ms, "min_hours": min_hours}
     old = db.get_setting("thresholds")
+    feedback = re.sub(r"\s+", " ", default_feedback).strip()[:200] or db.DEFAULT_SETTINGS["default_feedback"]
     db.set_setting("thresholds", new, user["id"])
+    if feedback != db.get_setting("default_feedback"):
+        db.set_setting("default_feedback", feedback, user["id"])
+        db.log_activity(user, "Changed default TXP remark", feedback)
     if any(float(old[k]) != float(new[k]) for k in new):
         db.log_activity(user, "Changed thresholds",
                         f"PD {new['pd_pct']:g} %, jitter {new['jitter_ms']:g} ms, RTT {new['rtt_ms']:g} ms, "

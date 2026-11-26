@@ -328,8 +328,8 @@ a.tile:hover { text-decoration: none; transform: translateY(-2px); border-color:
 .fb { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px dashed transparent; border-radius: 8px; padding: 3px 7px; margin: -3px -7px; background: none; text-align: left; color: inherit; overflow-wrap: anywhere; }
 button.fb { cursor: text; }
 button.fb:hover { border-color: #b9c6d8; background: var(--surface); }
-button.fb .icon { width: 13px; height: 13px; color: var(--muted); opacity: 0; }
-button.fb:hover .icon { opacity: 1; }
+button.fb .icon { width: 14px; height: 14px; color: var(--brand); opacity: .75; flex: none; }
+button.fb:hover .icon, button.fb:focus-visible .icon { opacity: 1; }
 .fb.default { color: var(--muted); }
 .fb-edited { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--sky); flex: none; }
 .fb-input { min-width: 200px; }

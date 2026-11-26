@@ -223,7 +223,7 @@
       res.saved.forEach(function (id) { if (byId[id]) { byId[id].feedback = res.feedback; byId[id].edited = true; } });
       var known = Array.prototype.some.call(suggestions.options, function (o) { return o.value === res.feedback; });
       if (!known && res.feedback) suggestions.appendChild(el("option", { value: res.feedback }));
-      TX.toast("good", !res.feedback ? "TXP remark cleared." : res.saved.length === 1 ? "TXP remark saved." : "TXP remark saved for " + TX.num(res.saved.length) + " sites.");
+      TX.toast("good", res.reset ? "TXP remark reset to “" + res.feedback + "”." : res.saved.length === 1 ? "TXP remark saved." : "TXP remark saved for " + TX.num(res.saved.length) + " sites.");
       return res;
     }, function (err) {
       TX.toast("bad", err.message || "Could not save the TXP remark.");

@@ -45,12 +45,12 @@ The same ID under two different names counts as two sites.
 A path type is listed for a KPI when 3 or more hours of the day count. If both path types of a site
 are listed, the report has a row for each. Pending days are the previous
 report's pending days plus one, or 0 if the site was not on the previous report. The TXP remark (the
-reason for the problem, or what is needed to fix it) is typed in by an administrator on the Report
-page: click **Add remark** in the row, or tick several rows and give them one remark. It is saved in
-the database, printed as "TXP Remark" in the Excel report, and carried to the next day's report while
-the site stays listed. A site on its first day starts with no remark.
+reason for the problem, or what is needed to fix it) starts as "TXOP to check" for a site on its first
+day. Anyone signed in can edit it on the Report page: click the remark in the row, or tick several rows
+and give them one remark. It is saved in the database, printed as "TXP Remark" in the Excel report, and
+carried to the next day's report while the site stays listed.
 
-An administrator can change the thresholds under **Settings**. A change
+An administrator can change the thresholds and the default TXP remark under **Settings**. A change
 applies to reports generated afterwards.
 
 ## Continuing from the old reports

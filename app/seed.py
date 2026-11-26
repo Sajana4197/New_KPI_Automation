@@ -32,6 +32,7 @@ def read_old_report(path: Path) -> list[dict]:
         raise SeedError("This does not look like an old IPPM report: no PD / JITTER / RTT header row was found.")
     header = [_norm(c) for c in rows[header_idx]]
     starts = sorted((header.index(k.lower()), k) for k in KPIS)
+    default_feedback = db.get_setting("default_feedback") or db.DEFAULT_SETTINGS["default_feedback"]
     items: list[dict] = []
     for n, (start, kpi) in enumerate(starts):
         end = starts[n + 1][0] if n + 1 < len(starts) else len(header)
@@ -53,7 +54,7 @@ def read_old_report(path: Path) -> list[dict]:
             def cell(idx):
                 return r[idx] if idx is not None and idx < len(r) else None
 
-            feedback = str(cell(c_fb)).strip() if cell(c_fb) not in (None, "") else ""
+            feedback = str(cell(c_fb)).strip() if cell(c_fb) not in (None, "") else default_feedback
             category = str(cell(c_cat)).strip() if cell(c_cat) not in (None, "") else category_for(name)
             items.append({"kpi": kpi, "site_name": name, "category": category,
                           "sample_count": _to_int(cell(c_count)), "pending_days": _to_int(cell(c_pend)),
